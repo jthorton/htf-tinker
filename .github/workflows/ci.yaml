@@ -46,7 +46,7 @@ jobs:
         if: ${{ matrix.python-version != '3.13' }}
         uses: mamba-org/setup-micromamba@v2
         with:
-          environment-file: environment.yml
+          environment-file: environment.yaml
           environment-name: htf_env
           cache-environment: true
           create-args: >-
