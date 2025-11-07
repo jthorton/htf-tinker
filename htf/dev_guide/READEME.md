@@ -8,7 +8,7 @@ This guide aims to help you (and future developers) navigate the inner workings 
 We’ll start with two representative examples — one **without ghost atoms** and one **with ghost atoms** — which together illustrate most of the HTF’s behavior.  
 Throughout, we’ll reference the relevant sections of code that perform key steps in building the hybrid system.
 
-**Note** The examples are based on the `openff-2.2.1.offxml` small molecule force field, so if the smirks types be updated or changed in future versions the number of interpolated parameters may change but the logic remains the same.
+**Note** The examples are based on the `openff-2.2.1.offxml` small molecule force field, so if the smirks types are updated or changed in future versions the number of interpolated parameters may change but the logic remains the same.
 
 ---
 
@@ -529,8 +529,7 @@ In this first example all interactions are directly mapped so there are no entri
 ---
 
 ## 👻 Example 2: Transformation *With* Ghost Atoms
-
-
+![figures/cl-ethane.png](figures/cl-ethane.png)
 ---
 
 ## ⚙️ Key Concepts

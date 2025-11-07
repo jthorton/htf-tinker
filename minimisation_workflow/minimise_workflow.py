@@ -270,7 +270,8 @@ def main(ligands: Path, output: Path, network: None | Path):
         simulation = app.Simulation(
             topology=htf.omm_hybrid_topology,
             system=hybrid_system,
-            integrator=integrator
+            integrator=integrator,
+            platform="CPU",
         )
         default_lambda = _rfe_utils.lambdaprotocol.LambdaProtocol()
         for i in [0, 1]:
@@ -309,7 +310,8 @@ def main(ligands: Path, output: Path, network: None | Path):
         simulation = app.Simulation(
             topology=openff_mol.to_topology().to_openmm(),
             system=system,
-            integrator=integrator
+            integrator=integrator,
+            platform="CPU",
         )
         # make sure we wrap back to openmm units
         simulation.context.setPositions(ensure_quantity(openff_mol.conformers[0], "openmm"))
@@ -390,6 +392,7 @@ def main(ligands: Path, output: Path, network: None | Path):
         writer.write(rdkit_mol)
     writer.close()
     logger.info(f"Wrote pure end-states to {output / 'pure_endstates.sdf'}")
+
     # 2. write out the hybrid end states to an SDF file use one file per unique ligand
     for smc_name, hybrid_list in hybrid_endstate_data.items():
         writer = Chem.SDWriter((output / f"hybrid_endstates_{smc_name}.sdf").as_posix())
@@ -409,6 +412,7 @@ def main(ligands: Path, output: Path, network: None | Path):
             writer.write(rdkit_mol)
         writer.close()
         logger.info(f"Wrote hybrid end-states to {output / f'hybrid_endstates_{smc_name}.sdf'}")
+
     # 3. write out a CSV file with the RMSD and energy differences for each edge
     rows = []
     for smc_name, hybrid_list in hybrid_endstate_data.items():
@@ -423,6 +427,7 @@ def main(ligands: Path, output: Path, network: None | Path):
     df = pd.DataFrame(rows)
     df.to_csv(output / "hybrid_endstate_analysis.csv", index=False)
     logger.info(f"Wrote hybrid end-state analysis to {output / 'hybrid_endstate_analysis.csv'}")
+
     # plot the distributions of internal coord RMSD differences
     internal_coord_plot(df=df, filename=str(output / "internal_coordinate_rmsd.png"))
     logger.info(f"Wrote internal coordinate RMSD plot to {output / 'internal_coordinate_rmsd.png'}")
