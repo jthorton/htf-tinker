@@ -1,0 +1,6 @@
+name: htf_env
+channels:
+  - conda-forge
+dependencies:
+  - openfe
+  - pytest
