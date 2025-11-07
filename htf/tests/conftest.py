@@ -106,7 +106,7 @@ def htf_chloro_fluoroethane(chloroethane, fluoroethane, chloroethane_to_fluoroet
     """Generate the htf for chloroethane to fluoroethane."""
     settings = RelativeHybridTopologyProtocol.default_settings()
     # make sure we interpolate the 1-4 exceptions involving dummy atoms if present
-    settings.alchemical_settings.turn_off_core_unique_exceptions = False
+    settings.alchemical_settings.turn_off_core_unique_exceptions = True
     small_ff = settings.forcefield_settings.small_molecule_forcefield
     if ".offxml" not in small_ff:
         small_ff += ".offxml"
@@ -142,7 +142,7 @@ def htf_chloro_ethane(chloroethane, ethane, chloroethane_to_ethane_mapping):
     """Generate the htf for chloroethane to ethane with interpolate 1-4s on!"""
     settings = RelativeHybridTopologyProtocol.default_settings()
     # make sure we interpolate the 1-4 exceptions involving dummy atoms
-    settings.alchemical_settings.turn_off_core_unique_exceptions = False
+    settings.alchemical_settings.turn_off_core_unique_exceptions = True
     small_ff = settings.forcefield_settings.small_molecule_forcefield
     if ".offxml" not in small_ff:
         small_ff += ".offxml"
@@ -216,7 +216,7 @@ def htf_chlorobenzene_fluorobenzene(chlorobenzene, fluorobenzene, chlorobenzene_
     """Generate the htf for chlorobenzene to fluorobenzene."""
     settings = RelativeHybridTopologyProtocol.default_settings()
     # make sure we interpolate the 1-4 exceptions involving dummy atoms if present
-    settings.alchemical_settings.turn_off_core_unique_exceptions = False
+    settings.alchemical_settings.turn_off_core_unique_exceptions = True
     small_ff = settings.forcefield_settings.small_molecule_forcefield
     if ".offxml" not in small_ff:
         small_ff += ".offxml"
@@ -255,7 +255,7 @@ def htf_chlorobenzene_benzene(chlorobenzene, benzene, chlorobenzene_to_benzene_m
     """Generate the htf for chlorobenzene to benzene with interpolate 1-4s on!"""
     settings = RelativeHybridTopologyProtocol.default_settings()
     # make sure we interpolate the 1-4 exceptions involving dummy atoms
-    settings.alchemical_settings.turn_off_core_unique_exceptions = False
+    settings.alchemical_settings.turn_off_core_unique_exceptions = True
     small_ff = settings.forcefield_settings.small_molecule_forcefield
     if ".offxml" not in small_ff:
         small_ff += ".offxml"
