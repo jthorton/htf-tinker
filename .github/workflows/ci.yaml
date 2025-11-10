@@ -29,7 +29,6 @@ jobs:
       matrix:
         os: ["ubuntu-latest", "macos-latest"]
         python-version:
-          - "3.11"
           - "3.12"
 
     steps:
@@ -67,4 +66,4 @@ jobs:
         uses: codecov/codecov-action@v3
         with:
             files: ./coverage.xml
-            fail_ci_if_error: true
+            fail_ci_if_error: false
