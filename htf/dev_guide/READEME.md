@@ -528,8 +528,110 @@ In this first example all interactions are directly mapped so there are no entri
 
 ---
 
-## 👻 Example 2: Transformation *With* Ghost Atoms
+# 👻 Example 2: Transformation *With* Ghost Atoms
+
+In this second example we consider another simple perfectly aligned transformation where chloroethane is transformed to ethane by removing the chlorine atom and adding a hydrogen atom in its place.
+Due to the hybrid topology protocol requiring that constraints not change length during a transformation this results in the Cl -> H atoms not being directly mapped but rather both being treated as ghost atoms at either end of the transformation.
+
 ![figures/cl-ethane.png](figures/cl-ethane.png)
+
+**Note**: This example uses the HybridTopologyFactory setting `interpolate_old_and_new_14s=True` to ensure correct behavior of 1-4 interactions involving ghost atoms.
+
+## Expected Behavior
+
+- **2 Ghost atoms**: the resulting hybrid system should contain `9` atoms total with one `unique_old` and one `unique_new` atom with the rest forming the mapped core, with atom index `8` referring to the ghost H of ethane.
+- **The same forces**: The algorithm used to build the hybrid system is also the same as described in the previous example, however there are some slight differences in how the nonbonded exceptions and custom sterics forces are built to account for the presence of ghost atoms and 1-4 interactions between the core and ghost atoms.
+
+Let's again go through the expected forces in the hybrid system one by one and analyse the interactions for this case.
+
+## Bond Terms
+
+The bond terms are handled in the same way as described in the previous example. 
+Here is an excerpt of the resulting `CustomBondForce` in the hybrid system:
+
+```xml
+<Force energy="(K/2)*(r-length)^2;K = (1-lambda_bonds)*K1 + lambda_bonds*K2;length = (1-lambda_bonds)*length1 + lambda_bonds*length2;" forceGroup="0" name="CustomBondForce" type="CustomBondForce" usesPeriodic="0" version="3">
+    <PerBondParameters>
+        <Parameter name="length1"/>
+        <Parameter name="K1"/>
+        <Parameter name="length2"/>
+        <Parameter name="K2"/>
+    </PerBondParameters>
+    <GlobalParameters>
+        <Parameter default="0" name="lambda_bonds"/>
+    </GlobalParameters>
+    <EnergyParameterDerivatives/>
+    <Bonds>
+        <Bond p1="1" p2="2" param1=".15336821898359998" param2="180110.90173344052" param3=".15336821898359998" param4="180110.90173344052"/>
+    </Bonds>
+</Force>
+```
+
+This time only a single bond is in the interpolated section corresponding to the C-C bond which is mapped between the two molecules. The other bonds involving the Cl and H atoms are not included as they involve ghost atoms. 
+The Cl bond in chloroethane is instead added to the `HarmonicBondForce` in the hybrid system with its interactions held constant across lambda while the H bond in ethane is added as a constraint. An excerpt of the `HarmonicBondForce` is shown below:
+
+```xml
+<Force forceGroup="0" name="HarmonicBondForce" type="HarmonicBondForce" usesPeriodic="0" version="2">
+    <Bonds>
+        <Bond d=".18020307897979998" k="101834.95358115867" p1="0" p2="1"/>
+    </Bonds>
+</Force>
+```
+
+The parameters agree with what we expect from the first example however they are now present in different forces due to the presence of ghost atoms.
+
+## Angle Terms
+
+The angle terms are also handled in the same way as described in the previous example and the above bond example. In this case we now only have `9` mapped angles which are present in the `CustomAngleForce` of the hybrid system.
+Here is an excerpt of the resulting `CustomAngleForce` in the hybrid system:
+
+```xml
+<Force energy="(K/2)*(theta-theta0)^2;K = (1.0-lambda_angles)*K_1 + lambda_angles*K_2;theta0 = (1.0-lambda_angles)*theta0_1 + lambda_angles*theta0_2;" forceGroup="0" name="CustomAngleForce" type="CustomAngleForce" usesPeriodic="0" version="3">
+    <PerAngleParameters>
+        <Parameter name="theta0_1"/>
+        <Parameter name="K_1"/>
+        <Parameter name="theta0_2"/>
+        <Parameter name="K_2"/>
+    </PerAngleParameters>
+    <GlobalParameters>
+        <Parameter default="0" name="lambda_angles"/>
+    </GlobalParameters>
+    <EnergyParameterDerivatives/>
+    <Angles>
+        <Angle p1="1" p2="2" p3="5" param1="1.9188319964264946" param2="559.2803824294216" param3="1.9188319964264946" param4="559.2803824294216"/>
+        <Angle p1="1" p2="2" p3="6" param1="1.9188319964264946" param2="559.2803824294216" param3="1.9188319964264946" param4="559.2803824294216"/>
+        <Angle p1="1" p2="2" p3="7" param1="1.9188319964264946" param2="559.2803824294216" param3="1.9188319964264946" param4="559.2803824294216"/>
+        <Angle p1="2" p2="1" p3="3" param1="1.9188319964264946" param2="559.2803824294216" param3="1.9188319964264946" param4="559.2803824294216"/>
+        <Angle p1="2" p2="1" p3="4" param1="1.9188319964264946" param2="559.2803824294216" param3="1.9188319964264946" param4="559.2803824294216"/>
+        <Angle p1="3" p2="1" p3="4" param1="1.8908789677076112" param2="306.81862462732323" param3="1.8908789677076112" param4="306.81862462732323"/>
+        <Angle p1="5" p2="2" p3="6" param1="1.8908789677076112" param2="306.81862462732323" param3="1.8908789677076112" param4="306.81862462732323"/>
+        <Angle p1="5" p2="2" p3="7" param1="1.8908789677076112" param2="306.81862462732323" param3="1.8908789677076112" param4="306.81862462732323"/>
+        <Angle p1="6" p2="2" p3="7" param1="1.8908789677076112" param2="306.81862462732323" param3="1.8908789677076112" param4="306.81862462732323"/>
+    </Angles>
+</Force>
+```
+You will notice that the angles involving the Cl (index `0`) and H (index `8`) atoms are not present here as they involve ghost atoms.
+An excerpt of the `HarmonicAngleForce` in the hybrid system is shown below which contains the constant angle term involving the Cl and H ghost atoms:
+
+```xml
+<Force forceGroup="0" name="HarmonicAngleForce" type="HarmonicAngleForce" usesPeriodic="0" version="2">
+    <Angles>
+        <Angle a="1.9188319964264946" k="559.2803824294216" p1="0" p2="1" p3="2"/>
+        <Angle a="1.9188319964264946" k="559.2803824294216" p1="0" p2="1" p3="3"/>
+        <Angle a="1.9188319964264946" k="559.2803824294216" p1="0" p2="1" p3="4"/>
+        <Angle a="1.9188319964264946" k="559.2803824294216" p1="8" p2="1" p3="2"/>
+        <Angle a="1.8908789677076112" k="306.81862462732323" p1="8" p2="1" p3="3"/>
+        <Angle a="1.8908789677076112" k="306.81862462732323" p1="8" p2="1" p3="4"/>
+    </Angles>
+</Force>
+```
+
+Here we see that the same atoms are involved in both sets of angles and only differ by the ghost atom index (0 for Cl and 8 for H).
+
+## Torsion Terms
+
+
+
 ---
 
 ## ⚙️ Key Concepts

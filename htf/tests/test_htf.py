@@ -616,9 +616,9 @@ def test_nonbonded_exceptions_no_dummy(htf_chloro_fluoroethane):
             # Lorentz-Berthelot combining rules
             expected_sigma = (chloro_vdw1.sigma + chloro_vdw2.sigma) / 2.0
             expected_epsilon = ((chloro_vdw1.epsilon * chloro_vdw2.epsilon) ** 0.5) * vdw_scale  # scaled epsilon by the 1-4 scale for the ff
-            assert pytest.approx(charge_prod.value_in_unit(unit.elementary_charge**2)) == expected_charge_prod # charge product
+            assert expected_charge_prod == pytest.approx(charge_prod.value_in_unit(unit.elementary_charge**2), rel=1e-5)  # charge product
             assert sigma == expected_sigma.m_as(offunit.nanometer) * unit.nanometer  # sigma
-            assert pytest.approx(epsilon.value_in_unit(unit.kilojoule_per_mole)) == expected_epsilon.m_as(offunit.kilojoule_per_mole)  # epsilon
+            assert expected_epsilon.m_as(offunit.kilojoule_per_mole) == pytest.approx(epsilon.value_in_unit(unit.kilojoule_per_mole), rel=1e-5)  # epsilon
             # track how many non-zero exceptions we have found
             non_zero_exceptions +=1
         # not a 1-4 so this should be set to zero
@@ -684,9 +684,9 @@ def test_nonbonded_exceptions_dummy(htf_chloro_ethane):
                 # Lorentz-Berthelot combining rules
                 expected_sigma = (chloro_vdw1.sigma + chloro_vdw2.sigma) / 2.0
                 expected_epsilon = ((chloro_vdw1.epsilon * chloro_vdw2.epsilon) ** 0.5) * vdw_scale # scaled epsilon by the 1-4 scale for the ff
-                assert pytest.approx(charge_prod.value_in_unit(unit.elementary_charge**2)) == expected_charge_prod # charge product
+                assert expected_charge_prod ==  pytest.approx(charge_prod.value_in_unit(unit.elementary_charge**2), rel=1e-5)  # charge product
                 assert sigma == expected_sigma.m_as(offunit.nanometer) * unit.nanometer  # sigma
-                assert pytest.approx(epsilon.value_in_unit(unit.kilojoule_per_mole)) == expected_epsilon.m_as(offunit.kilojoule_per_mole)  # epsilon
+                assert expected_epsilon.m_as(offunit.kilojoule_per_mole) ==pytest.approx(epsilon.value_in_unit(unit.kilojoule_per_mole), rel=1e-5)  # epsilon
                 # track how many non-zero exceptions we have found
                 non_zero_exceptions += 1
         # not a 1-4 so this should be set to zero
@@ -754,7 +754,7 @@ def test_nonbonded_exception_offsets_no_dummy(htf_chloro_fluoroethane):
                 fluoro_charge2 = fluoro_charges[f2]
                 # must use the 1-4 scale factor defined in the force field
                 expected_scale = ((fluoro_charge1 * fluoro_charge2) - (chloro_charge1 * chloro_charge2)) * electro_scale
-                assert pytest.approx(charge_prod_scale) == expected_scale
+                assert expected_scale == pytest.approx(charge_prod_scale, rel=1e-5)
                 # sigma and epsilon should be zero
                 assert sigma_scale == 0.0
                 assert epsilon_scale == 0.0
@@ -778,7 +778,7 @@ def test_nonbonded_exception_offsets_no_dummy(htf_chloro_fluoroethane):
                 # must use the 1-4 scale factor defined in the force field
                 expected_epsilon_scale = (fluoro_epsilon.m_as(offunit.kilojoule_per_mole) - chloro_epsilon.m_as(offunit.kilojoule_per_mole)) * vdw_scale
                 assert sigma_scale == expected_sigma_scale
-                assert pytest.approx(epsilon_scale) == expected_epsilon_scale
+                assert expected_epsilon_scale == pytest.approx(epsilon_scale, rel=1e-5)
     # make sure we found all non-zero offsets
     assert non_zero_offsets == 12
 
@@ -846,7 +846,7 @@ def test_nonbonded_exception_offsets_dummy(htf_chloro_ethane):
                 # must use the 1-4 scale factor defined in the force field
                 expected_scale = ((ethane_charge1 * ethane_charge2) - (chloro_charge1 * chloro_charge2)) * electro_scale
                 # we see some rounding issues here so use approx
-                assert pytest.approx(charge_prod_scale) == expected_scale
+                assert expected_scale == pytest.approx(charge_prod_scale, rel=1e-5)
                 # sigma and epsilon should be zero
                 assert sigma_scale == 0.0
                 assert epsilon_scale == 0.0
@@ -1175,7 +1175,7 @@ def test_custom_sterics_force_dummy(htf_chloro_ethane):
             charge1 = chloro_charges[p1]
             charge2 = chloro_charges[p2]
             # check the charge product at lambda=0
-            assert pytest.approx(params[0]) == charge1 * charge2 * electro_scale
+            assert charge1 * charge2 * electro_scale == pytest.approx(params[0], rel=1e-5)
             # this is scaled by the unique flags make sure unique_old is 1 and unique_new is 0
             assert params[5] == 1  # unique_old
             assert params[6] == 0  # unique_new
@@ -1185,7 +1185,7 @@ def test_custom_sterics_force_dummy(htf_chloro_ethane):
             expected_sigma = (chloro_vdw1.sigma + chloro_vdw2.sigma) / 2.0
             expected_epsilon = ((chloro_vdw1.epsilon * chloro_vdw2.epsilon) ** 0.5) * vdw_scale
             assert params[1] == expected_sigma.m_as(offunit.nanometer)
-            assert pytest.approx(params[2]) == expected_epsilon.m_as(offunit.kilojoule_per_mole)
+            assert expected_epsilon.m_as(offunit.kilojoule_per_mole) == pytest.approx(params[2], rel=1e-5)
             # check the vdw go to zero at lambda=1
             assert params[4] == 0.0  # epsilon at lambda=1
             # sigma doesn't matter if epsilon is zero
@@ -1196,7 +1196,7 @@ def test_custom_sterics_force_dummy(htf_chloro_ethane):
             ethane_charge1 = ethane_charges[e1]
             ethane_charge2 = ethane_charges[e2]
             # check the charge product at lambda=1
-            assert pytest.approx(params[0]) == ethane_charge1 * ethane_charge2 * electro_scale
+            assert ethane_charge1 * ethane_charge2 * electro_scale == pytest.approx(params[0], rel=1e-5)
             # this is scaled by the unique flags make sure unique_old is 0 and unique_new is 1
             assert params[5] == 0  # unique_old
             assert params[6] == 1  # unique_new
@@ -1206,7 +1206,7 @@ def test_custom_sterics_force_dummy(htf_chloro_ethane):
             expected_sigma = (ethane_vdw1.sigma + ethane_vdw2.sigma) / 2.0
             expected_epsilon = ((ethane_vdw1.epsilon * ethane_vdw2.epsilon) ** 0.5) * vdw_scale
             assert params[3] == expected_sigma.m_as(offunit.nanometer)
-            assert pytest.approx(params[4]) == expected_epsilon.m_as(offunit.kilojoule_per_mole)
+            assert  expected_epsilon.m_as(offunit.kilojoule_per_mole) == pytest.approx(params[4], rel=1e-5)
             # check the vdw are zero at lambda=0
             assert params[2] == 0.0  # epsilon at lambda=0
 
@@ -1234,8 +1234,11 @@ def test_vacuum_system_energy_no_dummy(htf_chloro_fluoroethane):
     )
     for end_state, ref_system, ref_top, pos in [
         (0, htf._old_system, htf._old_topology, htf._old_positions),
-        (1, htf._new_system, htf._old_topology, htf._new_positions)
+        (1, htf._new_system, htf._new_topology, htf._new_positions)
     ]:
+        for force in ref_system.getForces():
+            if isinstance(force, openmm.NonbondedForce):
+                force.setNonbondedMethod(openmm.NonbondedForce.NoCutoff)
         # set lambda
         # set all lambda values to the current end state
         for name, func in default_lambda.functions.items():
@@ -1257,7 +1260,9 @@ def test_vacuum_system_energy_no_dummy(htf_chloro_fluoroethane):
         ref_state = ref_simulation.context.getState(getEnergy=True)
         ref_energy = ref_state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
         # energies should be the same
-        assert pytest.approx(hybrid_energy) == ref_energy
+        assert ref_energy == pytest.approx(hybrid_energy, rel=1e-5)
+        # check the energy is non-zero to avoid false positives
+        assert 0.0 != pytest.approx(hybrid_energy)
 
 
 def test_vacuum_system_energy_dummy(htf_chloro_ethane):
@@ -1270,7 +1275,7 @@ def test_vacuum_system_energy_dummy(htf_chloro_ethane):
     default_lambda = _rfe_utils.lambdaprotocol.LambdaProtocol()
     htf = htf_chloro_ethane["htf"]
     hybrid_system = htf.hybrid_system
-    # set the nonbonded method to NoCutoff to avoid any cutoff issues
+    # # set the nonbonded method to NoCutoff to avoid any cutoff issues
     for force in hybrid_system.getForces():
         if isinstance(force, openmm.NonbondedForce):
             force.setNonbondedMethod(openmm.NonbondedForce.NoCutoff)
@@ -1293,7 +1298,7 @@ def test_vacuum_system_energy_dummy(htf_chloro_ethane):
 
     for end_state, ref_system, ref_top, pos in [
         (0, htf._old_system, htf._old_topology, htf._old_positions),
-        (1, htf._new_system, htf._old_topology, htf._new_positions)
+        (1, htf._new_system, htf._new_topology, htf._new_positions)
     ]:
         # set lambda
         # set all lambda values to the current end state
@@ -1309,6 +1314,7 @@ def test_vacuum_system_energy_dummy(htf_chloro_ethane):
         for force in ref_system.getForces():
             if force.getName() == "NonbondedForce":
                 force.setForceGroup(1)
+                force.setNonbondedMethod(openmm.NonbondedForce.NoCutoff)
             else:
                 force.setForceGroup(0)
         # now create a reference simulation
@@ -1323,7 +1329,9 @@ def test_vacuum_system_energy_dummy(htf_chloro_ethane):
         ref_energy = ref_state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
         # energies should be the same
         # this is only true if we correctly interpolate the 1-4 interactions involving dummy atoms
-        assert pytest.approx(hybrid_energy) == ref_energy
+        assert ref_energy == pytest.approx(hybrid_energy, rel=1e-5)
+        # check the energy is non-zero to avoid false positives
+        assert 0.0 != pytest.approx(hybrid_energy)
 
 
 def test_system_energy_pme_no_dummy(htf_chlorobenzene_fluorobenzene):
@@ -1345,7 +1353,7 @@ def test_system_energy_pme_no_dummy(htf_chlorobenzene_fluorobenzene):
     )
     for end_state, ref_system, ref_top, pos in [
         (0, htf._old_system, htf._old_topology, htf._old_positions),
-        (1, htf._new_system, htf._old_topology, htf._new_positions)
+        (1, htf._new_system, htf._new_topology, htf._new_positions)
     ]:
         # set lambda
         # set all lambda values to the current end state
@@ -1368,9 +1376,9 @@ def test_system_energy_pme_no_dummy(htf_chlorobenzene_fluorobenzene):
         ref_state = ref_simulation.context.getState(getEnergy=True)
         ref_energy = ref_state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
         # energies should be the same
-        assert pytest.approx(hybrid_energy) == ref_energy
+        assert ref_energy == pytest.approx(hybrid_energy, rel=1e-5)
         # make sure the energy is non-zero to avoid false positives
-        assert pytest.approx(hybrid_energy) != 0.0
+        assert 0.0 != pytest.approx(hybrid_energy)
 
 def test_system_interaction_groups_no_dummy(htf_chlorobenzene_fluorobenzene):
     """Test the interaction groups are correctly assigned when we have environment atoms as well."""
@@ -1461,7 +1469,7 @@ def test_system_energy_pme_dummy(htf_chlorobenzene_benzene):
 
     for end_state, ref_system, ref_top, pos in [
         (0, htf._old_system, htf._old_topology, htf._old_positions),
-        (1, htf._new_system, htf._old_topology, htf._new_positions)
+        (1, htf._new_system, htf._new_topology, htf._new_positions)
     ]:
         # set lambda
         # set all lambda values to the current end state
@@ -1492,5 +1500,5 @@ def test_system_energy_pme_dummy(htf_chlorobenzene_benzene):
         # energies should be the same
         # this is only true if we correctly interpolate the 1-4 interactions involving dummy atoms
         # make sure the energy is non-zero to avoid false positives
-        assert pytest.approx(hybrid_energy) != 0.0
-        assert hybrid_energy == pytest.approx(ref_energy, , rel=1e-5)
+        assert  0.0 != pytest.approx(hybrid_energy)
+        assert hybrid_energy == pytest.approx(ref_energy, rel=1e-5)

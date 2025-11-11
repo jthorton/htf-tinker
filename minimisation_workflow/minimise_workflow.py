@@ -222,6 +222,9 @@ def main(ligands: Path, output: Path, network: None | Path):
     4. Collect the positions of the minimised ligands and write them to an output SDF file.
     5. Calculate the RMSD of the hybrid end states to the pure end states and calculate the relative energy difference using the pure topologies and save to CSV for analysis.
     """
+    platform = openmm.Platform.getPlatformByName("CPU")
+    # create the output directory if it doesn't exist
+    output.mkdir(parents=True, exist_ok=True)
     if network is None:
         # load the ligands
         supplier = Chem.SDMolSupplier(ligands.as_posix(), removeHs=False)
@@ -240,8 +243,6 @@ def main(ligands: Path, output: Path, network: None | Path):
         )
         logger.info(f"Generated perturbation map with {len(ligand_network.edges)} edges")
 
-        # create the output directory if it doesn't exist
-        output.mkdir(parents=True, exist_ok=True)
         # save the perturbation map
         ligand_network.to_json(output / "ligand_network.json")
         logger.info(f"Saved perturbation map to {output / 'ligand_network.json'}")
@@ -271,7 +272,7 @@ def main(ligands: Path, output: Path, network: None | Path):
             topology=htf.omm_hybrid_topology,
             system=hybrid_system,
             integrator=integrator,
-            platform="CPU",
+            platform=platform,
         )
         default_lambda = _rfe_utils.lambdaprotocol.LambdaProtocol()
         for i in [0, 1]:
@@ -311,7 +312,7 @@ def main(ligands: Path, output: Path, network: None | Path):
             topology=openff_mol.to_topology().to_openmm(),
             system=system,
             integrator=integrator,
-            platform="CPU",
+            platform=platform,
         )
         # make sure we wrap back to openmm units
         simulation.context.setPositions(ensure_quantity(openff_mol.conformers[0], "openmm"))
