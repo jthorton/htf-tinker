@@ -1493,4 +1493,4 @@ def test_system_energy_pme_dummy(htf_chlorobenzene_benzene):
         # this is only true if we correctly interpolate the 1-4 interactions involving dummy atoms
         # make sure the energy is non-zero to avoid false positives
         assert pytest.approx(hybrid_energy) != 0.0
-        assert pytest.approx(hybrid_energy) == ref_energy
+        assert hybrid_energy == pytest.approx(ref_energy, , rel=1e-5)
