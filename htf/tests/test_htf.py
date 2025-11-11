@@ -672,7 +672,7 @@ def test_nonbonded_exceptions_dummy(htf_chloro_ethane):
                 # make sure the parameters are set to zero
                 assert charge_prod == 0.0 * unit.elementary_charge**2  # charge product should always be zero
                 assert epsilon == 0.0 * unit.kilojoule_per_mole  # epsilon, should always be zero
-                # sigma will use a dummy value this is not important is epsilon is 0.0
+                # sigma will use a dummy value this is not important as epsilon is 0.0
                 zeroed_dummy_exceptions += 1
             else:
                 # this is a mapped exception so check the parameters match chloroethane
