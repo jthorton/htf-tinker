@@ -1514,7 +1514,7 @@ def test_cmap_system_no_dummy_pme_energy(chlorobenzene_to_fluorobenzene_mapping,
         "amber/protein.ff19SB.xml",  # cmap amber ff
         "amber/tip3p_standard.xml",  # TIP3P and recommended monovalent ion parameters
         "amber/tip3p_HFE_multivalent.xml",  # for divalent ions
-        "amber/phosaa10.xml",  # Handles THE TPO
+        "amber/phosaa19SB.xml",  # Handles THE TPO
     ]
     htf = make_htf(
         mapping=chlorobenzene_to_fluorobenzene_mapping,
