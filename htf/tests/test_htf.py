@@ -1502,3 +1502,68 @@ def test_system_energy_pme_dummy(htf_chlorobenzene_benzene):
         # make sure the energy is non-zero to avoid false positives
         assert  0.0 != pytest.approx(hybrid_energy)
         assert hybrid_energy == pytest.approx(ref_energy, rel=1e-5)
+
+def test_cmap_system_no_dummy_pme_energy(chlorobenzene_to_fluorobenzene_mapping, t4_lysozyme_solvated):
+    """
+    Test that we can make a hybrid topology for a system with conserved CMAP terms not in the alchemical region and that
+    the hybrid energy matches the end state energy.
+    """
+    settings = RelativeHybridTopologyProtocol.default_settings()
+    # update the default force fields to include a force field with CMAP terms
+    settings.forcefield_settings.forcefields = [
+        "amber/protein.ff19SB.xml",  # cmap amber ff
+        "amber/tip3p_standard.xml",  # TIP3P and recommended monovalent ion parameters
+        "amber/tip3p_HFE_multivalent.xml",  # for divalent ions
+        "amber/phosaa10.xml",  # Handles THE TPO
+    ]
+    htf = make_htf(
+        mapping=chlorobenzene_to_fluorobenzene_mapping,
+        settings=settings,
+        protein=t4_lysozyme_solvated
+    )
+    # make sure the cmap force was added to the internal store
+    assert "cmap_torsion_force" in htf._hybrid_system_forces
+    hybrid_system = htf.hybrid_system
+    # make sure we can find the force in the system
+    forces = {force.getName(): force for force in hybrid_system.getForces()}
+    assert isinstance(forces["CMAPTorsionForce"], openmm.CMAPTorsionForce)
+
+    integrator = openmm.LangevinIntegrator(300 * unit.kelvin, 1.0 / unit.picosecond, 0.002 * unit.picoseconds)
+    platform = openmm.Platform.getPlatformByName("CPU")
+    default_lambda = _rfe_utils.lambdaprotocol.LambdaProtocol()
+
+    hybrid_simulation = app.Simulation(
+        topology=htf.omm_hybrid_topology,
+        system=hybrid_system,
+        integrator=integrator,
+        platform=platform
+    )
+    for end_state, ref_system, ref_top, pos in [
+        (0, htf._old_system, htf._old_topology, htf._old_positions),
+        (1, htf._new_system, htf._new_topology, htf._new_positions)
+    ]:
+        # set lambda
+        # set all lambda values to the current end state
+        for name, func in default_lambda.functions.items():
+            val = func(end_state)
+            hybrid_simulation.context.setParameter(name, val)
+        # set positions
+        hybrid_simulation.context.setPositions(pos)
+        # get the hybrid system energy
+        hybrid_state = hybrid_simulation.context.getState(getEnergy=True)
+        hybrid_energy = hybrid_state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
+        # now create a reference simulation
+        ref_simulation = app.Simulation(
+            topology=ref_top,
+            system=ref_system,
+            integrator=copy.deepcopy(integrator),
+            platform=platform
+        )
+        ref_simulation.context.setPositions(pos)
+        ref_state = ref_simulation.context.getState(getEnergy=True)
+        ref_energy = ref_state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
+        # energies should be the same
+        assert ref_energy == pytest.approx(hybrid_energy, rel=1e-5)
+        # make sure the energy is non-zero to avoid false positives
+        assert 0.0 != pytest.approx(hybrid_energy)
+
