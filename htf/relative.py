@@ -273,7 +273,7 @@ class HybridTopologyFactory:
         old_system_terms = {}
         # gather all alchemical atoms, use a copy so we don't change the groups
         alchemical_atoms = self._atom_classes["core_atoms"].copy()
-        alchemical_atoms.update([self._atom_classes["unique_old"], self._atom_classes["unique_new"]])
+        alchemical_atoms.update([self._atom_classes["unique_old_atoms"], self._atom_classes["unique_new_atoms"]])
 
         logger.info("Adding old system CMAPs")
         # add all the old maps
