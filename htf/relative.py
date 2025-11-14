@@ -213,6 +213,10 @@ class HybridTopologyFactory:
 
         self._handle_periodic_torsion_force()
 
+        # this method will check and add the force if it is compatible
+        # this means that the cmap terms do not change are are not applied to the alchemical atoms
+        self._handle_cmap_torsion_force()
+
         if has_nonbonded_force:
             self._handle_nonbonded()
             if not (len(self._old_system_exceptions.keys()) == 0 and
@@ -226,6 +230,100 @@ class HybridTopologyFactory:
         self._hybrid_topology = self._create_mdtraj_topology()
         self._omm_hybrid_topology = self._create_hybrid_topology()
         logger.info("Hybrid system created")
+
+    def _handle_cmap_torsion_force(self):
+        """
+        Check if we have a compatible CMAP torsion force not in the alchemical region if so add it to the hybrid system.
+        """
+        cmap_old = self._old_system_forces.get("CMAPTorsionForce", None)
+        cmap_new = self._new_system_forces.get("CMAPTorsionForce", None)
+        # if only one has cmap raise an error
+        if type(cmap_new) != type(cmap_old):
+            raise RuntimeError(f"Inconsistent CMAPTorsionForce between end states expected to be present in both"
+                               f"but found in old: {bool(cmap_old)} and new: {bool(cmap_new)}")
+
+        if cmap_new == cmap_old is None:
+            logger.info("No CMAPTorsionForce found skipping adding force.")
+            return
+
+        logger.info("CMAPTorsionForce found checking compatibility")
+        # some quick checks on compatibility like the number of maps and total number of terms
+        old_no_maps = cmap_old.getNumMaps()
+        new_no_maps = cmap_new.getNumMaps()
+        if old_no_maps != new_no_maps:
+            raise RuntimeError(f"Incompatible CMAPTorsionForce between end states expected to have same number of maps, "
+                               f"found old: {old_no_maps} and new: {new_no_maps}")
+
+        old_no_torsions = cmap_old.getNumTorsions()
+        new_no_torsions = cmap_new.getNumTorsions()
+        if old_no_torsions != new_no_torsions:
+            raise RuntimeError(f"Incompatible CMAPTorsionForce between end states expected to have same number of torsions, "
+                               f"found old: {old_no_torsions} and new: {new_no_torsions}")
+
+
+        logger.info("Adding CMAPTorsionForce to hybrid system")
+        # start looping through the old system terms and add them to the hybrid system
+        # track the terms we add so we can cross compare with the new system and also make sure we don't hit
+        # an index in the alchemical region
+        hybrid_cmap_force = openmm.CMAPTorsionForce()
+        self._hybrid_system.addForce(hybrid_cmap_force)
+        self._hybrid_system_forces["cmap_torsion_force"] = hybrid_cmap_force
+
+        old_system_maps = {}
+        old_system_terms = {}
+        # gather all alchemical atoms, use a copy so we don't change the groups
+        alchemical_atoms = self._atom_classes["core_atoms"].copy()
+        alchemical_atoms.update([self._atom_classes["unique_old"], self._atom_classes["unique_new"]])
+
+        logger.info("Adding old system CMAPs")
+        # add all the old maps
+        for i in range(old_no_maps):
+            size, energy = cmap_old.getMapParameters(i)
+            old_system_maps[i] = (size, energy)
+            # also add the map to the hybrid system
+            hybrid_cmap_force.addMap(size, energy)
+
+        logger.info("Adding old system CMAP terms")
+        # now add the terms we need to map from the old to the new index
+        old_to_hybrid_index = self._old_to_hybrid_map
+        new_to_hybrid_index = self._new_to_hybrid_map
+        for i in range(old_no_torsions):
+            # get the parameters for the torsion
+            map_index, atom_ids = cmap_old.getTorsionParameters()
+            # map to hybrid indices
+            hybrid_atom_ids = [old_to_hybrid_index[a_id] for a_id in atom_ids]
+            # add to the hybrid system using the hybrid index
+            hybrid_cmap_force.addTorsion(map_index, *hybrid_atom_ids)
+            # track the atoms we add in the hybrid system to cross compare with new system
+            old_system_terms[tuple(hybrid_atom_ids)] = map_index
+
+        # check if any of the atoms added are in the alchemical region
+        old_added_atoms = {[atom_id for atoms in old_system_terms.keys() for atom_id in atoms]}
+        if overlap_atoms := alchemical_atoms.intersection(old_added_atoms):
+            raise RuntimeError(
+                f"Incompatible CMAPTorsionForce term found in alchemical region for old system atoms {overlap_atoms}")
+
+        # now loop over the new system force and check the terms are compatible
+        # we expect to add no new terms
+        for i in range(new_no_maps):
+            size, energy = cmap_new.getMapParameters(i)
+            if (size, energy) != old_system_maps[i]:
+                raise RuntimeError(f"Incompatible CMAPTorsionForce map parameters found between end states for map {i} "
+                                   f"expected {old_system_maps[i]} found {(size, energy)}")
+
+        for i in range(new_no_torsions):
+            map_index, atom_ids = cmap_new.getTorsionParameters()
+            # map to hybrid indices
+            hybrid_atom_ids = [new_to_hybrid_index[a_id] for a_id in atom_ids]
+            # check its in the old system terms
+            if tuple(hybrid_atom_ids) not in old_system_terms.keys():
+                raise RuntimeError(f"Incompatible CMAPTorsionForce term found between end states for atoms {hybrid_atom_ids} "
+                                   f"not found in old system terms.")
+            # check the map index is the same
+            if map_index != old_system_terms[tuple(hybrid_atom_ids)]:
+                raise RuntimeError(f"Incompatible CMAPTorsionForce map index found between end states for atoms {hybrid_atom_ids} "
+                                   f"expected {old_system_terms[tuple(hybrid_atom_ids)]} found {map_index}")
+        logger.info("CMAPTorsionForce added to the hybrid system")
 
     @staticmethod
     def _check_bounds(value, varname, minmax=(0, 1)):
@@ -318,7 +416,7 @@ class HybridTopologyFactory:
             # TODO: double check that CMMotionRemover is ok being here
             known_forces = {'HarmonicBondForce', 'HarmonicAngleForce',
                             'PeriodicTorsionForce', 'NonbondedForce',
-                            'MonteCarloBarostat', 'CMMotionRemover'}
+                            'MonteCarloBarostat', 'CMMotionRemover', 'CMAPTorsionForce'}
 
             force_names = forces.keys()
             unknown_forces = set(force_names) - set(known_forces)
