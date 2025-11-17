@@ -273,7 +273,7 @@ class HybridTopologyFactory:
         old_system_terms = {}
         # gather all alchemical atoms, use a copy so we don't change the groups
         alchemical_atoms = self._atom_classes["core_atoms"].copy()
-        alchemical_atoms.update([self._atom_classes["unique_old_atoms"], self._atom_classes["unique_new_atoms"]])
+        alchemical_atoms.update(self._atom_classes["unique_old_atoms"], self._atom_classes["unique_new_atoms"])
 
         logger.info("Adding old system CMAPs")
         # add all the old maps
@@ -288,8 +288,9 @@ class HybridTopologyFactory:
         old_to_hybrid_index = self._old_to_hybrid_map
         new_to_hybrid_index = self._new_to_hybrid_map
         for i in range(old_no_torsions):
-            # get the parameters for the torsion
-            map_index, atom_ids = cmap_old.getTorsionParameters()
+            # get the parameters for the torsion using the same notation as OpenMM
+            map_index, a1, a2, a3, a4, b1, b2, b3, b4 = cmap_old.getTorsionParameters(i)
+            atom_ids = [a1, a2, a3, a4, b1, b2, b3, b4]
             # map to hybrid indices
             hybrid_atom_ids = [old_to_hybrid_index[a_id] for a_id in atom_ids]
             # add to the hybrid system using the hybrid index
@@ -298,7 +299,7 @@ class HybridTopologyFactory:
             old_system_terms[tuple(hybrid_atom_ids)] = map_index
 
         # check if any of the atoms added are in the alchemical region
-        old_added_atoms = {[atom_id for atoms in old_system_terms.keys() for atom_id in atoms]}
+        old_added_atoms = {atom_id for atoms in old_system_terms.keys() for atom_id in atoms}
         if overlap_atoms := alchemical_atoms.intersection(old_added_atoms):
             raise RuntimeError(
                 f"Incompatible CMAPTorsionForce term found in alchemical region for old system atoms {overlap_atoms}")
@@ -312,7 +313,8 @@ class HybridTopologyFactory:
                                    f"expected {old_system_maps[i]} found {(size, energy)}")
 
         for i in range(new_no_torsions):
-            map_index, atom_ids = cmap_new.getTorsionParameters()
+            map_index, a1, a2, a3, a4, b1, b2, b3, b4 = cmap_new.getTorsionParameters(i)
+            atom_ids = [a1, a2, a3, a4, b1, b2, b3, b4]
             # map to hybrid indices
             hybrid_atom_ids = [new_to_hybrid_index[a_id] for a_id in atom_ids]
             # check its in the old system terms
