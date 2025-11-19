@@ -214,7 +214,7 @@ class HybridTopologyFactory:
         self._handle_periodic_torsion_force()
 
         # this method will check and add the force if it is compatible
-        # this means that the cmap terms do not change are are not applied to the alchemical atoms
+        # this means that the cmap terms that do not change are not applied to the alchemical atoms
         self._handle_cmap_torsion_force()
 
         if has_nonbonded_force:
