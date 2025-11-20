@@ -238,7 +238,7 @@ class HybridTopologyFactory:
         cmap_old = self._old_system_forces.get("CMAPTorsionForce", None)
         cmap_new = self._new_system_forces.get("CMAPTorsionForce", None)
         # if only one has cmap raise an error
-        if type(cmap_new) != type(cmap_old):
+        if (cmap_new is None) ^ (cmap_old is None):
             raise RuntimeError(f"Inconsistent CMAPTorsionForce between end states expected to be present in both"
                                f"but found in old: {bool(cmap_old)} and new: {bool(cmap_new)}")
 
