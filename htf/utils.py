@@ -4,9 +4,10 @@ from htf import DevelopmentHybridTopologyFactory
 from openmmforcefields.generators import SystemGenerator
 from openmm import app, unit
 import openmm
-from gufe import SmallMoleculeComponent, LigandAtomMapping, ProteinComponent, SolventComponent
+from gufe import LigandAtomMapping, ProteinComponent, SolventComponent
 from openfe.protocols.openmm_rfe import _rfe_utils
 from openfe.protocols.openmm_utils import system_creation
+import ast
 
 
 def make_htf(mapping: LigandAtomMapping, settings, protein: ProteinComponent = None, solvent: SolventComponent = None) -> DevelopmentHybridTopologyFactory:
@@ -124,3 +125,118 @@ def make_htf(mapping: LigandAtomMapping, settings, protein: ProteinComponent = N
         softcore_LJ_v2_alpha=settings.alchemical_settings.softcore_alpha,
         interpolate_old_and_new_14s=settings.alchemical_settings.turn_off_core_unique_exceptions,
     )
+
+def _parse_ghostly_output(ghostly_output_path: str) -> dict:
+    """Parse the output file from Ghostly into a dictionary of applied corrections which can be processed further."""
+    corrections = {
+        "lambda_0":
+            {"bridges":{}, "removed_angles": [], "removed_dihedrals": [], "stiffened_angles": [], "softened_angles": {}},
+        "lambda_1":
+            {"bridges":{}, "removed_angles": [], "removed_dihedrals": [], "stiffened_angles": [], "softened_angles": {}}
+    }
+    current_lambda = None
+    bridges = False
+    current_bridge = None
+    bridge_id = None
+    with open(ghostly_output_path, 'r') as f:
+        for line in f.readlines():
+            # split out the debugging prefix
+            _, line = line.strip().split(" - ", 1)
+
+            # control flags for bridges
+            if "Ghost atom bridges at lambda = 0" in line:
+                current_lambda = "lambda_0"
+                bridges = True
+                continue
+            elif "Ghost atom bridges at lambda = 1" in line:
+                current_lambda = "lambda_1"
+                bridges = True
+                continue
+            elif "Bridge" in line and bridges:
+                # Example output
+                # Bridge 0: 1
+                # start of a new bridge
+                parts = line.strip().split()
+                bridge_id = int(parts[1][0])
+                current_bridge = int(parts[-1])
+                corrections[current_lambda]["bridges"][bridge_id] = {"bridge_atom": current_bridge}
+                continue
+            elif "ghosts" in line and bridges:
+                # Example output
+                # ghosts: [0]
+                parts = line.strip().split()
+                ghosts = ast.literal_eval(parts[1])
+                corrections[current_lambda]["bridges"][bridge_id]["ghosts"] = ghosts
+                continue
+            elif "physical" in line and bridges:
+                # Example output
+                # physical: [2,3,4,8]
+                parts = line.strip().split()
+                physicals = ast.literal_eval(parts[1])
+                corrections[current_lambda]["bridges"][bridge_id]["physical"] = physicals
+                continue
+            elif "type" in line and bridges:
+                # Example output
+                # type: 4
+                parts = line.strip().split()
+                btype = int(parts[1])
+                corrections[current_lambda]["bridges"][bridge_id]["type"] = btype
+                continue
+            # control flags for modifications
+            elif "Applying modifications" in line:
+                # Example output
+                # Applying modifications to triple ghost junction at λ = 0:
+                bridges = False
+                if "λ = 0:" in line:
+                    current_lambda = "lambda_0"
+                elif "λ = 1:" in line:
+                    current_lambda = "lambda_1"
+                continue
+            elif "Removing angle" in line and not bridges:
+                # Example output
+                # Removing angle: [2-1-8], 66.7563 [theta - 1.91878]^2
+                parts = line.strip().split()
+                angle = tuple(ast.literal_eval(parts[2][:-1].replace("-", ",")))
+                corrections[current_lambda]["removed_angles"].append(angle)
+                continue
+            elif "Removing dihedral" in line and not bridges:
+                # Example output
+                # Removing dihedral: [5-2-1-8], 0.227995 cos(3 phi) + 0.227995
+                parts = line.strip().split()
+                dihedral = tuple(ast.literal_eval(parts[2][:-1].replace("-", ",")))
+                corrections[current_lambda]["removed_dihedrals"].append(dihedral)
+                continue
+            elif "Stiffening angle" in line and not bridges:
+                # angles are always stiffened to 100 kcal/mol/rad^2 and an equilibrium of 90 degrees
+                # Example output
+                # Stiffening angle: [4-1-8], 36.7766 [theta - 1.89114]^2 --> 100 [theta - 1.5708]^2
+                parts = line.strip().split()
+                angle = tuple(ast.literal_eval(parts[2][:-1].replace("-", ",")))
+                corrections[current_lambda]["stiffened_angles"].append(angle)
+                continue
+            elif "Softening angle" in line and not bridges:
+                # angles are later optimised by default in ghostly, so we just need to track which ones were softened
+                # Example output
+                # Softening angle: [17-19-30], 46.9 [theta - 1.8984]^2 --> 0.05 [theta - 1.8984]^2
+                parts = line.strip().split()
+                angle = tuple(ast.literal_eval(parts[2][:-1].replace("-", ",")))
+                # add the default softening parameters k = 0.05 kcal/mol/rad^2 and theta stays the same
+                corrections[current_lambda]["softened_angles"][angle] = {"k": 0.05}
+                continue
+            elif "Optimising angle" in line and not bridges:
+                # if the softened angle is optimised, we need to update its parameters
+                # Example output
+                # Optimising angle: [17-19-30], 0.05 [theta - 1.8984]^2 --> 5 [theta - 1.66289]^2 (std err: 0.006 radian)
+                parts = line.strip().split()
+                angle = tuple(ast.literal_eval(parts[2][:-1].replace("-", ",")))
+                new_params = line.strip().split("-->")[1].split()
+                new_k = int(new_params[0])
+                new_equ_theta = float(new_params[3].split("]")[0])
+                corrections[current_lambda]["softened_angles"][angle] = {"k": new_k, "theta_eq": new_equ_theta}
+                continue
+            elif "junction" in line:
+                continue
+            else:
+                raise RuntimeError(f"Could not parse line in Ghostly output: {line}")
+
+    return corrections
