@@ -289,3 +289,8 @@ def htf_chlorobenzene_benzene(chlorobenzene, benzene, chlorobenzene_to_benzene_m
         "vdW_scale": ff.get_parameter_handler("vdW").scale14,
         "force_field": ff
     }
+
+@pytest.fixture
+def ghostly_output_chloroethane_to_ethane():
+    with resources.files("htf.tests.data") as f:
+        return (f / "ghostly" / "chloroethane_ethane.log").as_posix()
