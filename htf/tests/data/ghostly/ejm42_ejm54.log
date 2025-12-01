@@ -1,0 +1,51 @@
+2025-11-27 09:10:22.491 | DEBUG    | ghostly._ghostly:modify:177 - Ghost atom bridges at lambda = 0
+2025-11-27 09:10:22.491 | DEBUG    | ghostly._ghostly:modify:179 -   Bridge 0: 31
+2025-11-27 09:10:22.491 | DEBUG    | ghostly._ghostly:modify:180 -   ghosts: [35]
+2025-11-27 09:10:22.491 | DEBUG    | ghostly._ghostly:modify:183 -   physical: [19,32,33,34]
+2025-11-27 09:10:22.491 | DEBUG    | ghostly._ghostly:modify:186 -   type: 4
+2025-11-27 09:10:22.491 | DEBUG    | ghostly._ghostly:modify:189 - Ghost atom bridges at lambda = 1
+2025-11-27 09:10:22.491 | DEBUG    | ghostly._ghostly:modify:191 -   Bridge 0: 19
+2025-11-27 09:10:22.492 | DEBUG    | ghostly._ghostly:modify:192 -   ghosts: [30]
+2025-11-27 09:10:22.492 | DEBUG    | ghostly._ghostly:modify:195 -   physical: [17,29,31]
+2025-11-27 09:10:22.492 | DEBUG    | ghostly._ghostly:modify:198 -   type: 3
+2025-11-27 09:10:22.492 | DEBUG    | ghostly._ghostly:modify:191 -   Bridge 1: 31
+2025-11-27 09:10:22.492 | DEBUG    | ghostly._ghostly:modify:192 -   ghosts: [33]
+2025-11-27 09:10:22.492 | DEBUG    | ghostly._ghostly:modify:195 -   physical: [19,32,34,35]
+2025-11-27 09:10:22.492 | DEBUG    | ghostly._ghostly:modify:198 -   type: 4
+2025-11-27 09:10:22.492 | DEBUG    | ghostly._ghostly:_higher:1032 - Applying modifications to higher order junction at λ = 0:
+2025-11-27 09:10:22.493 | DEBUG    | ghostly._ghostly:_higher:1071 -   Removing angle: [19-31-35], 66.7563 [theta - 1.91878]^2
+2025-11-27 09:10:22.494 | DEBUG    | ghostly._ghostly:_higher:1086 -   Removing dihedral: [29-19-31-35], 0.321516 cos(2 phi) + 0.251007 cos(3 phi) + 0.572523
+2025-11-27 09:10:22.494 | DEBUG    | ghostly._ghostly:_higher:1086 -   Removing dihedral: [19-31-35-38], 0.143905 cos(3 phi) + 0.143905
+2025-11-27 09:10:22.494 | DEBUG    | ghostly._ghostly:_higher:1086 -   Removing dihedral: [19-31-35-36], 0.143905 cos(3 phi) + 0.143905
+2025-11-27 09:10:22.494 | DEBUG    | ghostly._ghostly:_higher:1086 -   Removing dihedral: [17-19-31-35], 0.843465 cos(2 phi) - 0.152328 cos(phi) - 0.110804 cos(4 phi - 3.14159) - 0.221908 cos(3 phi - 3.14159) + 0.3
+58425
+2025-11-27 09:10:22.495 | DEBUG    | ghostly._ghostly:_higher:1086 -   Removing dihedral: [19-31-35-37], 0.143905 cos(3 phi) + 0.143905
+2025-11-27 09:10:22.495 | DEBUG    | ghostly._ghostly:_triple:666 - Applying modifications to triple ghost junction at λ = 0:
+2025-11-27 09:10:22.495 | DEBUG    | ghostly._ghostly:_triple:688 -   Planar junction.
+2025-11-27 09:10:22.495 | DEBUG    | ghostly._ghostly:_triple:712 -   Removing angle: [32-31-35], 66.7563 [theta - 1.91878]^2
+2025-11-27 09:10:22.497 | DEBUG    | ghostly._ghostly:_triple:728 -   Removing dihedral: [32-31-35-38], 0.227995 cos(3 phi) + 0.227995
+2025-11-27 09:10:22.497 | DEBUG    | ghostly._ghostly:_triple:728 -   Removing dihedral: [32-31-35-36], 0.227995 cos(3 phi) + 0.227995
+2025-11-27 09:10:22.497 | DEBUG    | ghostly._ghostly:_triple:728 -   Removing dihedral: [32-31-35-37], 0.227995 cos(3 phi) + 0.227995
+2025-11-27 09:10:22.497 | DEBUG    | ghostly._ghostly:_triple:763 -   Stiffening angle: [34-31-35], 66.7563 [theta - 1.91878]^2 --> 100 [theta - 1.5708]^2
+2025-11-27 09:10:22.498 | DEBUG    | ghostly._ghostly:_triple:666 - Applying modifications to triple ghost junction at λ = 1:
+2025-11-27 09:10:22.498 | DEBUG    | ghostly._ghostly:_triple:787 -   Non-planar junction.
+2025-11-27 09:10:22.498 | DEBUG    | ghostly._ghostly:_triple:835 -   Softening angle: [29-19-30], 36.7766 [theta - 1.89114]^2 --> 0.05 [theta - 1.89114]^2
+2025-11-27 09:10:22.498 | DEBUG    | ghostly._ghostly:_triple:835 -   Softening angle: [17-19-30], 66.7563 [theta - 1.91878]^2 --> 0.05 [theta - 1.91878]^2
+2025-11-27 09:10:22.499 | DEBUG    | ghostly._ghostly:_triple:835 -   Softening angle: [30-19-31], 66.7563 [theta - 1.91878]^2 --> 0.05 [theta - 1.91878]^2
+2025-11-27 09:10:22.500 | DEBUG    | ghostly._ghostly:_triple:872 -   Removing dihedral: [29-19-31-33], 0.227995 cos(3 phi) + 0.227995
+2025-11-27 09:10:22.500 | DEBUG    | ghostly._ghostly:_triple:864 -   Removing dihedral: [30-19-31-34], 0.227995 cos(3 phi) + 0.227995
+2025-11-27 09:10:22.500 | DEBUG    | ghostly._ghostly:_triple:864 -   Removing dihedral: [30-19-31-32], 0.227995 cos(3 phi) + 0.227995
+2025-11-27 09:10:22.500 | DEBUG    | ghostly._ghostly:_triple:864 -   Removing dihedral: [30-19-31-33], 0.227995 cos(3 phi) + 0.227995
+2025-11-27 09:10:22.502 | DEBUG    | ghostly._ghostly:_triple:864 -   Removing dihedral: [18-17-19-30], 0.949661 cos(phi) + 0.227854 cos(2 phi) - 0.185337 cos(3 phi - 3.14159) + 0.992177
+2025-11-27 09:10:22.504 | DEBUG    | ghostly._ghostly:_triple:864 -   Removing dihedral: [16-17-19-30], 0.189899 cos(3 phi) + 0.189899
+2025-11-27 09:10:22.505 | DEBUG    | ghostly._ghostly:_triple:889 -   Optimising equilibrium values for softened angles.
+2025-11-27 09:13:07.634 | DEBUG    | ghostly._ghostly:_triple:957 -   Optimising angle: [29-19-30], 0.05 [theta - 1.89114]^2 --> 5 [theta - 1.26611]^2 (std err: 0.004 radian)
+2025-11-27 09:13:07.637 | DEBUG    | ghostly._ghostly:_triple:957 -   Optimising angle: [17-19-30], 0.05 [theta - 1.91878]^2 --> 5 [theta - 1.72317]^2 (std err: 0.002 radian)
+2025-11-27 09:13:07.638 | DEBUG    | ghostly._ghostly:_triple:957 -   Optimising angle: [30-19-31], 0.05 [theta - 1.91878]^2 --> 5 [theta - 1.44191]^2 (std err: 0.002 radian)
+2025-11-27 09:13:07.731 | DEBUG    | ghostly._ghostly:_higher:1032 - Applying modifications to higher order junction at λ = 1:
+2025-11-27 09:13:07.735 | DEBUG    | ghostly._ghostly:_higher:1071 -   Removing angle: [19-31-33], 66.7563 [theta - 1.91878]^2
+2025-11-27 09:13:07.740 | DEBUG    | ghostly._ghostly:_higher:1086 -   Removing dihedral: [17-19-31-33], 0.143905 cos(3 phi) + 0.143905
+2025-11-27 09:13:07.741 | DEBUG    | ghostly._ghostly:_triple:666 - Applying modifications to triple ghost junction at λ = 1:
+2025-11-27 09:13:07.742 | DEBUG    | ghostly._ghostly:_triple:688 -   Planar junction.
+2025-11-27 09:13:07.743 | DEBUG    | ghostly._ghostly:_triple:712 -   Removing angle: [32-31-33], 36.7766 [theta - 1.89114]^2
+2025-11-27 09:13:07.752 | DEBUG    | ghostly._ghostly:_triple:763 -   Stiffening angle: [33-31-34], 36.7766 [theta - 1.89114]^2 --> 100 [theta - 1.5708]^2
