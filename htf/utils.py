@@ -131,8 +131,8 @@ def make_htf(mapping: LigandAtomMapping, settings, protein: ProteinComponent = N
 def _find_dummy_junctions(htf: DevelopmentHybridTopologyFactory) -> dict:
     """Identify dummy-core atom junctions in the HTF and return a dictionary of their details."""
     junctions = {"lambda_0": {}, "lambda_1": {}}
-    ghost_old_atoms = htf._atom_classes["unique_old_atoms"]
-    ghost_new_atoms = htf._atom_classes["unique_new_atoms"]
+    dummy_old_atoms = htf._atom_classes["unique_old_atoms"]
+    dummy_new_atoms = htf._atom_classes["unique_new_atoms"]
     junction_id = 0
     # get all the bonds in the hybrid topology
     hybrid_bonds = list(htf.omm_hybrid_topology.bonds())
@@ -149,34 +149,34 @@ def _find_dummy_junctions(htf: DevelopmentHybridTopologyFactory) -> dict:
         bonded_atom_lookup[a2].add(a1)
 
     # find bridges for lambda_0, these are the unique new atoms which should not be present at lambda=0
-    for ghost_atom in ghost_new_atoms:
+    for dummy_atom in dummy_new_atoms:
         # find bonded physical atoms
-        bonded_physicals = [a for a in bonded_atom_lookup[ghost_atom] if a not in ghost_new_atoms]
+        bonded_physicals = [a for a in bonded_atom_lookup[dummy_atom] if a not in dummy_new_atoms]
         if len(bonded_physicals) == 1:
             # this is a bridge atom
             junction_atom = bonded_physicals[0]
-            # find other ghost atoms bonded to the same physical atom
-            other_ghosts = [a for a in bonded_atom_lookup[junction_atom] if a in ghost_new_atoms and a != ghost_atom]
+            # find other dummy atoms bonded to the same physical atom
+            other_dummies = [a for a in bonded_atom_lookup[junction_atom] if a in dummy_new_atoms and a != dummy_atom]
             junctions["lambda_0"][junction_id] = {
                 "junction_atom": junction_atom,
-                "dummies": [ghost_atom] + other_ghosts,
-                "physical": [a for a in bonded_atom_lookup[junction_atom] if a not in ghost_new_atoms],
+                "dummies": [dummy_atom] + other_dummies,
+                "physical": [a for a in bonded_atom_lookup[junction_atom] if a not in dummy_new_atoms],
             }
             junction_id += 1
     # find bridges for lambda_1, these are the unique old atoms which should not be present at lambda=1
     junction_id = 0
-    for ghost_atom in ghost_old_atoms:
+    for dummy_atom in dummy_old_atoms:
         # find bonded physical atoms
-        bonded_physicals = [a for a in bonded_atom_lookup[ghost_atom] if a not in ghost_old_atoms]
+        bonded_physicals = [a for a in bonded_atom_lookup[dummy_atom] if a not in dummy_old_atoms]
         if len(bonded_physicals) == 1:
             # this is a bridge atom
             junction_atom = bonded_physicals[0]
-            # find other ghost atoms bonded to the same physical atom
-            other_ghosts = [a for a in bonded_atom_lookup[junction_atom] if a in ghost_old_atoms and a != ghost_atom]
+            # find other dummy atoms bonded to the same physical atom
+            other_dummies = [a for a in bonded_atom_lookup[junction_atom] if a in dummy_old_atoms and a != dummy_atom]
             junctions["lambda_1"][junction_id] = {
                 "junction_atom": junction_atom,
-                "dummies": [ghost_atom] + other_ghosts,
-                "physical": [a for a in bonded_atom_lookup[junction_atom] if a not in ghost_old_atoms],
+                "dummies": [dummy_atom] + other_dummies,
+                "physical": [a for a in bonded_atom_lookup[junction_atom] if a not in dummy_old_atoms],
             }
             junction_id += 1
     return junctions
@@ -200,10 +200,10 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
     """
     assert 0 <= scale_factor <= 1, "Scale factor must be between 0 and 1."
 
-    logger.info(f"Softening angles and torsions involving ghost atoms in the hybrid system by {(1.0 - scale_factor) * 100}%.")
+    logger.info(f"Softening angles and torsions involving dummy atoms in the hybrid system by {(1.0 - scale_factor) * 100}%.")
     htf_softened = copy.deepcopy(htf)
-    ghost_old_atoms = htf._atom_classes["unique_old_atoms"]
-    ghost_new_atoms = htf._atom_classes["unique_new_atoms"]
+    dummy_old_atoms = htf._atom_classes["unique_old_atoms"]
+    dummy_new_atoms = htf._atom_classes["unique_new_atoms"]
 
     new_hybrid_system = openmm.System()
     # add all the particles
@@ -217,8 +217,8 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
 
     hybrid_forces = htf._hybrid_system_forces
     # copy all forces which do not need to be modified
-    # We are only modifying angle and torsion forces which involve the bridge and ghost atoms
-    # As the HTF stores all terms involving ghosts in the standard forces we can copy all others directly
+    # We are only modifying angle and torsion forces which involve the bridge and dummy atoms
+    # As the HTF stores all terms involving dummies in the standard forces we can copy all others directly
     # The interpolated forces only contain terms for the core mapped atoms so we don't need to remove any
     forces_not_to_copy = ["standard_angle_force", "unique_atom_torsion_force"]
     for force_name, hybrid_force in hybrid_forces.items():
@@ -244,22 +244,22 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
     for i in range(old_hybrid_angle_force.getNumAngles()):
         p1, p2, p3, theta_eq, k = old_hybrid_angle_force.getAngleParameters(i)
         angle = (p1, p2, p3)
-        # for the angle terms there must be at least one core atom and 1 or 2 ghost atoms
+        # for the angle terms there must be at least one core atom and 1 or 2 dummy atoms
         # check lambda = 0 first
-        if 1 <= len(ghost_new_atoms.intersection(angle)) < 3:
+        if 1 <= len(dummy_new_atoms.intersection(angle)) < 3:
             # if we match a new unique atom the angle must be softened at lambda = 0
             # add the term to the interpolated custom angle force
             new_k = k * scale_factor
             logger.info(f"Softening angle {angle} at lambda=0: original k = {k}, new k = {new_k}")
             new_custom_angle_force.addAngle(p1, p2, p3, [theta_eq, new_k, theta_eq, k])
-        elif 1 <= len(ghost_old_atoms.intersection(angle)) < 3:
+        elif 1 <= len(dummy_old_atoms.intersection(angle)) < 3:
             # if we match an old unique atom the angle must be softened at lambda = 1
             # add the term to the interpolated custom angle force
             new_k = k * scale_factor
             logger.info(f"Softening angle {angle} at lambda=1: original k = {k}, new k = {new_k}")
             new_custom_angle_force.addAngle(p1, p2, p3, [theta_eq, k, theta_eq, new_k])
         else:
-            # the term does not involve any ghost atoms, so we can just copy it
+            # the term does not involve any dummy atoms, so we can just copy it
             new_harmonic_angle_force.addAngle(p1, p2, p3, theta_eq, k)
 
     # process torsions
@@ -269,9 +269,9 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
     for i in range(old_hybrid_torsion_force.getNumTorsions()):
         p1, p2, p3, p4, periodicity, phase, k = old_hybrid_torsion_force.getTorsionParameters(i)
         torsion = (p1, p2, p3, p4)
-        # for the torsion terms there must be at least one core atom and 1-3 ghost atoms
+        # for the torsion terms there must be at least one core atom and 1-3 dummy atoms
         # check lambda = 0 first
-        if 1 <= len(ghost_new_atoms.intersection(torsion)) < 4:
+        if 1 <= len(dummy_new_atoms.intersection(torsion)) < 4:
             # if we match a new unique atom the torsion must be softened at lambda = 0
             # add the term to the interpolated custom torsion force
             new_k = k * scale_factor
@@ -280,7 +280,7 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
                                                 [periodicity, phase,
                                             new_k, periodicity,
                                              phase, k])
-        elif 1 <= len(ghost_old_atoms.intersection(torsion)) < 4:
+        elif 1 <= len(dummy_old_atoms.intersection(torsion)) < 4:
             # if we match an old unique atom the torsion must be softened at lambda = 1
             # add the term to the interpolated custom torsion force
             new_k = k * scale_factor
@@ -290,7 +290,7 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
                                             k, periodicity,
                                              phase, new_k])
         else:
-            # the term does not involve any ghost atoms, so we can just copy it
+            # the term does not involve any dummy atoms, so we can just copy it
             new_torsion_force.addTorsion(p1, p2, p3, p4, periodicity, phase, k)
 
     htf_softened._hybrid_system = new_hybrid_system
