@@ -232,3 +232,236 @@ def test_chloro_ethane_scale_factor_torsions(htf_chloro_ethane):
         assert phase == ethane_torsion.phase[term_index].m_as(offunit.radian) * unit.radian
         assert k == ethane_torsion.k[term_index].m_as(offunit.kilojoule_per_mole) * unit.kilojoule_per_mole
 
+
+def test_toluene_to_pyridine_scale_factor_angles(htf_toluene_pyridine):
+    """Make sure that the scaling factor is applied correctly to the angle terms in a more complex system involving angles
+    with two dummy atoms.
+    """
+    htf = htf_toluene_pyridine["htf"]
+    scale_factor = 0.1
+    mapping = htf_toluene_pyridine["mapping"]
+    toluene_labels = htf_toluene_pyridine["toluene_labels"]
+    pyridine_labels = htf_toluene_pyridine["pyridine_labels"]
+    softened_htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor)
+    softened_hybrid_system = softened_htf.hybrid_system
+    forces = {force.getName(): force for force in softened_hybrid_system.getForces()}
+
+    # there should be 3 standard angle force terms (non-interpolated) corresponding to the 3 angles
+    # formed by the unique old dummy atoms in the methyl of toluene
+    standard_angle_force = forces["HarmonicAngleForce"]
+    num_angles = standard_angle_force.getNumAngles()
+    assert num_angles == 3
+    for i in range(num_angles):
+        p1, p2, p3, angle_eq, k = standard_angle_force.getAngleParameters(i)
+        angle = (p1, p2, p3)
+        # make sure all the atoms are in the dummy region of toluene
+        assert set(angle).issubset(htf._atom_classes["unique_old_atoms"])
+        # now compare the parameters to the toluene labels
+        toluene_angle = toluene_labels["Angles"][angle]
+        # angle_eq
+        assert angle_eq == toluene_angle.angle.m_as(offunit.radian) * unit.radian
+        # k
+        assert k == toluene_angle.k.m_as(offunit.kilojoule_per_mole / offunit.radian**2) * unit.kilojoule_per_mole / unit.radian**2
+
+    # there should be 21 interpolated angle terms covering fully mapped and scaled angles
+    custom_angle_force = forces["CustomAngleForce"]
+    num_angles = custom_angle_force.getNumAngles()
+    assert num_angles == 21
+    # there should be a single global parameter for lambda
+    assert custom_angle_force.getNumGlobalParameters() == 1
+    # make sure it has the correct name
+    assert custom_angle_force.getGlobalParameterName(0) == "lambda_angles"
+    # track how many are scaled we expect 5
+    scaled_angles = 0
+    for i in range(num_angles):
+        p1, p2, p3, params = custom_angle_force.getAngleParameters(i)
+        # p1, p2, p3 are the index in toluene/pyridine get the expected parameters from the labels
+        if p1 in htf._atom_classes["unique_old_atoms"] or p3 in htf._atom_classes["unique_old_atoms"]:
+            # this angle involves at least one old dummy atom from toluene
+            toluene_angle = toluene_labels["Angles"][(p1, p2, p3)]
+            # lambda_0 angle
+            assert params[0] == toluene_angle.angle.m_as(offunit.radian)
+            # lambda_0 k
+            assert params[1] == toluene_angle.k.m_as(offunit.kilojoule_per_mole / offunit.radian**2)
+            # lambda_1 angle stays the same
+            assert params[2] == toluene_angle.angle.m_as(offunit.radian)
+            # lambda_1 k is scaled by 0.1
+            expected_k = toluene_angle.k.m_as(offunit.kilojoule_per_mole / offunit.radian**2) * scale_factor
+            assert params[3] == expected_k
+            scaled_angles += 1
+        # there are no dummy atoms in pyridine so all others must be fully mapped
+        else:
+            # fully mapped angle
+            toluene_angle = toluene_labels["Angles"][(p1, p2, p3)]
+            e1 = mapping.componentA_to_componentB[p1]
+            e2 = mapping.componentA_to_componentB[p2]
+            e3 = mapping.componentA_to_componentB[p3]
+            pyridine_angle = pyridine_labels["Angles"][(e1, e2, e3)]
+            # lambda_0 angle should be the toluene angle
+            assert params[0] == toluene_angle.angle.m_as(offunit.radian)
+            # lambda_0 k should be the toluene k
+            assert params[1] == toluene_angle.k.m_as(offunit.kilojoule_per_mole / offunit.radian**2)
+            # lambda_1 angle should be the pyridine angle
+            assert params[2] == pyridine_angle.angle.m_as(offunit.radian)
+            # lambda_1 k should be the pyridine k
+            assert params[3] == pyridine_angle.k.m_as(offunit.kilojoule_per_mole / offunit.radian**2)
+
+    assert scaled_angles == 5
+
+def test_toluene_to_pyridine_scale_factor_torsions(htf_toluene_pyridine):
+    """Make sure that the scaling factor is applied correctly to the torsion terms in a more complex system involving
+    torsions with two dummy atoms and improper torsions.
+    """
+    htf = htf_toluene_pyridine["htf"]
+    scale_factor = 0.1
+    mapping = htf_toluene_pyridine["mapping"]
+    toluene_labels = htf_toluene_pyridine["toluene_labels"]
+    pyridine_labels = htf_toluene_pyridine["pyridine_labels"]
+    softened_htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor)
+    softened_hybrid_system = softened_htf.hybrid_system
+    forces = {force.getName(): force for force in softened_hybrid_system.getForces()}
+
+    # check the standard torsion force has the correct number of terms
+    standard_torsion_force = forces["PeriodicTorsionForce"]
+    num_standard_torsions = standard_torsion_force.getNumTorsions()
+    # Note the 5 impropers should be conserved which should give us 15 improper potentials in total but
+    # due to the degenerate order in which the impropers match only 2 (6 terms total) are stored in this force the rest
+    # are in the interpolated force
+    # So we have 22 torsions in total
+    assert num_standard_torsions == 22
+    for i in range(num_standard_torsions):
+        p1, p2, p3, p4, periodicity, phase, k = standard_torsion_force.getTorsionParameters(i)
+        torsion = (p1, p2, p3, p4)
+        # make sure this is a fully mapped torsion
+        assert len(htf._atom_classes["unique_old_atoms"].intersection(torsion)) == 0
+        # now compare the parameters to the toluene and pyridine labels they should be the same at both end states
+        # check if we have a proper or improper torsion
+        if torsion in toluene_labels["ProperTorsions"]:
+            toluene_torsion = toluene_labels["ProperTorsions"][torsion]
+            e1 = mapping.componentA_to_componentB[p1]
+            e2 = mapping.componentA_to_componentB[p2]
+            e3 = mapping.componentA_to_componentB[p3]
+            e4 = mapping.componentA_to_componentB[p4]
+            pyridine_torsion = pyridine_labels["ProperTorsions"][(e1, e2, e3, e4)]
+            # used to account for smirnoff improper see below
+            improper_scale = 1.0
+        else:
+            # if this is an improper openff expects the central atom to be index 1
+            # but openmm stores it as index 0 so change the order
+            torsion = (p2, p1, p3, p4)
+            # smirnoff improper are also applied 3 times to the system with different permutations of the connected
+            # atoms so we need to account for that here
+            improper_scale = 1 / 3
+            toluene_torsion = toluene_labels["ImproperTorsions"][torsion]
+            e1 = mapping.componentA_to_componentB[p1]
+            e2 = mapping.componentA_to_componentB[p2]
+            e3 = mapping.componentA_to_componentB[p3]
+            e4 = mapping.componentA_to_componentB[p4]
+            pyridine_torsion = pyridine_labels["ImproperTorsions"][(e2, e1, e3, e4)]
+        # check against toluene parameters
+        assert periodicity in toluene_torsion.periodicity
+        term_index = toluene_torsion.periodicity.index(periodicity)
+        assert phase == toluene_torsion.phase[term_index].m_as(offunit.radian) * unit.radian
+        assert k == toluene_torsion.k[term_index].m_as(offunit.kilojoule_per_mole) * unit.kilojoule_per_mole * improper_scale
+        # check against pyridine parameters
+        assert periodicity in pyridine_torsion.periodicity
+        term_index = pyridine_torsion.periodicity.index(periodicity)
+        assert phase == pyridine_torsion.phase[term_index].m_as(offunit.radian) * unit.radian
+        assert k == pyridine_torsion.k[term_index].m_as(offunit.kilojoule_per_mole) * unit.kilojoule_per_mole * improper_scale
+
+    # check the interpolated terms - this force has the scaled torsions and impropers
+    # Note some impropers are incorrectly scaled here due to the degenerate ordering mentioned above
+    # this should have no effect on the energy as the same value is used for both end states
+    custom_torsion_force = forces["CustomTorsionForce"]
+    # there should be a single global parameter for lambda
+    assert custom_torsion_force.getNumGlobalParameters() == 1
+    # make sure it has the correct name
+    assert custom_torsion_force.getGlobalParameterName(0) == "lambda_torsions"
+    num_torsions = custom_torsion_force.getNumTorsions()
+    assert num_torsions == 39
+
+    # track the number of scaled torsions we expect 13
+    scaled_torsions = 0
+    for i in range(num_torsions):
+        p1, p2, p3, p4, params = custom_torsion_force.getTorsionParameters(i)
+        # p1, p2, p3, p4 are the index in toluene/pyridine get the expected parameters from the labels
+        if 1<= len({p1, p2, p3, p4}.intersection(htf._atom_classes["unique_old_atoms"])) < 4:
+            # this is a torsion involving at least one old dummy atom from toluene and should be scaled
+            if (p1, p2, p3, p4) in toluene_labels["ProperTorsions"]:
+                toluene_torsion = toluene_labels["ProperTorsions"][(p1, p2, p3, p4)]
+                improper_scale = 1.0
+            else:
+                # if this is an improper openff expects the central atom to be index 1
+                # but openmm stores it as index 0 so change the order
+                torsion = (p2, p1, p3, p4)
+                # smirnoff improper are also applied 3 times to the system with different permutations of the connected
+                # atoms so we need to account for that here
+                improper_scale = 1 / 3
+                toluene_torsion = toluene_labels["ImproperTorsions"][torsion]
+            # lambda_0 periodicity
+            assert params[0] in toluene_torsion.periodicity
+            term_index = toluene_torsion.periodicity.index(params[0])
+            # lambda_0 phase
+            assert params[1] == toluene_torsion.phase[term_index].m_as(offunit.radian)
+            # lambda_0 k
+            assert params[2] == toluene_torsion.k[term_index].m_as(offunit.kilojoule_per_mole) * improper_scale
+            # lambda_1 periodicity stays the same
+            assert params[3] in toluene_torsion.periodicity
+            # lambda_1 phase stays the same
+            assert params[4] == toluene_torsion.phase[term_index].m_as(offunit.radian)
+            # lambda_1 k is scaled by 0.1
+            expected_k = toluene_torsion.k[term_index].m_as(offunit.kilojoule_per_mole) * improper_scale * scale_factor
+            assert params[5] == expected_k
+            scaled_torsions += 1
+
+        else:
+            # this is a fully mapped torsion which is changing between toluene and pyridine
+            # however the HTF only allows scaling to or from zero potentials not between potentials so the check
+            # is complicated
+            if params[0] == 0.0 and params[1] == 0.0 and params[2] == 0.0:
+                # this is a pyridine torsion which is zeroed at lambda_0
+                # map the torsion
+                e1 = mapping.componentA_to_componentB[p1]
+                e2 = mapping.componentA_to_componentB[p2]
+                e3 = mapping.componentA_to_componentB[p3]
+                e4 = mapping.componentA_to_componentB[p4]
+                if (e1, e2, e3, e4) in pyridine_labels["ProperTorsions"]:
+                    pyridine_torsion = pyridine_labels["ProperTorsions"][(e1, e2, e3, e4)]
+                    improper_scale = 1.0
+                else:
+                    # if this is an improper openff expects the central atom to be index 1
+                    # but openmm stores it as index 0 so change the order
+                    torsion = (e2, e1, e3, e4)
+                    # smirnoff improper are also applied 3 times to the system with different permutations of the connected
+                    # atoms so we need to account for that here
+                    improper_scale = 1 / 3
+                    pyridine_torsion = pyridine_labels["ImproperTorsions"][torsion]
+                # lambda_1 periodicity
+                assert params[3] in pyridine_torsion.periodicity
+                term_index = pyridine_torsion.periodicity.index(params[3])
+                # lambda_1 phase
+                assert params[4] == pyridine_torsion.phase[term_index].m_as(offunit.radian)
+                # lambda_1 k
+                assert params[5] == pyridine_torsion.k[term_index].m_as(offunit.kilojoule_per_mole) * improper_scale
+            elif params[3] == 0.0 and params[4] == 0.0 and params[5] == 0.0:
+                # this is a toluene torsion which is zeroed at lambda_1
+                if (p1, p2, p3, p4) in toluene_labels["ProperTorsions"]:
+                    toluene_torsion = toluene_labels["ProperTorsions"][(p1, p2, p3, p4)]
+                    improper_scale = 1.0
+                else:
+                    # if this is an improper openff expects the central atom to be index 1
+                    # but openmm stores it as index 0 so change the order
+                    torsion = (p2, p1, p3, p4)
+                    # smirnoff improper are also applied 3 times to the system with different permutations of the connected
+                    # atoms so we need to account for that here
+                    improper_scale = 1 / 3
+                    toluene_torsion = toluene_labels["ImproperTorsions"][torsion]
+                # lambda_0 periodicity
+                assert params[0] in toluene_torsion.periodicity
+                term_index = toluene_torsion.periodicity.index(params[0])
+                # lambda_0 phase
+                assert params[1] == toluene_torsion.phase[term_index].m_as(offunit.radian)
+                # lambda_0 k
+                assert params[2] == toluene_torsion.k[term_index].m_as(offunit.kilojoule_per_mole) * improper_scale
+
+    assert scaled_torsions == 13
