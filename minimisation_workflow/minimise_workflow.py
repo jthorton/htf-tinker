@@ -8,7 +8,7 @@ Workflow steps:
 4. Collect the positions of the minimised ligands and write them to an output SDF file.
 5. Calculate the RMSD of the hybrid end states to the pure end states and calculate the relative energy difference using the pure topologies and save to CSV for analysis.
 """
-
+from htf.utils import _scale_angles_and_torsions
 import click
 from pathlib import Path
 import logging
@@ -210,7 +210,13 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
     default=None,
     help="Optional JSON file containing a pre-defined perturbation map.",
 )
-def main(ligands: Path, output: Path, network: None | Path):
+@click.option(
+    "--scale-factor",
+    type=click.FLOAT,
+    default=1.0,
+    help="Scaling factor applied to dummy-core junction angle and torsion force constants."
+)
+def main(ligands: Path, output: Path, network: None | Path, scale_factor: float):
     """
     Command line interface for running a minimisation workflow.
     This can be configured using a YAML file.
@@ -265,6 +271,9 @@ def main(ligands: Path, output: Path, network: None | Path):
     hybrid_endstate_data = defaultdict(list)
     for edge in tqdm.tqdm(ligand_network.edges, desc="Minimising hybrid end-states"):
         htf = make_hybrid_factory(edge, system_generator)
+        if scale_factor != 1.0:
+            # build the new scaled htf
+            htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor)
         # c. Get the simulation object
         hybrid_system = htf.hybrid_system
         integrator = openmm.LangevinIntegrator(300*unit.kelvin, 1/unit.picosecond, 1*unit.femtoseconds)
