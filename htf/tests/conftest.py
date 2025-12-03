@@ -59,6 +59,18 @@ def pyridine():
         return SmallMoleculeComponent.from_sdf_file(f / "pyridine.sdf")
 
 @pytest.fixture(scope="module")
+def propane():
+    """Load propane with partial charges from sdf file."""
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "propane.sdf")
+
+@pytest.fixture(scope="module")
+def dimethyl_ether():
+    """Load dimethyl ether with partial charges from sdf file."""
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "dimethyl_ether.sdf")
+
+@pytest.fixture(scope="module")
 def chloroethane_to_fluoroethane_mapping(chloroethane, fluoroethane):
     """Return a mapping from chloroethane to fluoroethane."""
     return LigandAtomMapping(
@@ -115,6 +127,30 @@ def toluene_to_pyridine_mapping(toluene, pyridine):
         componentA_to_componentB={
             # most things mapped in ring but methyl C and Hs are not mapped
             1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 10: 6, 11: 7, 12: 8, 13: 9, 14: 10
+        }
+    )
+
+@pytest.fixture(scope="module")
+def propane_to_dimethyl_ether_mapping(propane, dimethyl_ether):
+    """Return a mapping from propane to dimethyl ether."""
+    return LigandAtomMapping(
+        componentA=propane,
+        componentB=dimethyl_ether,
+        componentA_to_componentB={
+            # only the central Hs on propane are not mapped
+            0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8
+        }
+    )
+
+@pytest.fixture(scope="module")
+def propane_to_chloroethane(propane, chloroethane):
+    """Return a mapping from propane to chloroethane."""
+    return LigandAtomMapping(
+        componentA=propane,
+        componentB=chloroethane,
+        componentA_to_componentB={
+            # map all but the terminal 3Hs in propane
+            2: 5, 3: 6, 4: 7, 9: 4, 10: 3, 0: 1, 1: 2, 5: 0
         }
     )
 
@@ -345,6 +381,78 @@ def htf_toluene_pyridine(toluene, pyridine, toluene_to_pyridine_mapping):
         "pyridine": pyridine,
         "toluene_charges": toluene_charges,
         "pyridine_charges": pyridine_charges,
+        "electrostatic_scale": ff.get_parameter_handler("Electrostatics").scale14,
+        "vdW_scale": ff.get_parameter_handler("vdW").scale14,
+        "force_field": ff
+    }
+
+@pytest.fixture(scope="module")
+def htf_propane_dimethyl_ether(propane, dimethyl_ether, propane_to_dimethyl_ether_mapping):
+    """Generate the htf for propane to dimethyl ether."""
+    settings = RelativeHybridTopologyProtocol.default_settings()
+    # make sure we interpolate the 1-4 exceptions involving dummy atoms if present
+    settings.alchemical_settings.turn_off_core_unique_exceptions = True
+    small_ff = settings.forcefield_settings.small_molecule_forcefield
+    if ".offxml" not in small_ff:
+        small_ff += ".offxml"
+    ff = ForceField(small_ff)
+    propane_openff = propane.to_openff()
+    propane_charges = propane_openff.partial_charges.m_as(offunit.elementary_charge)
+    propane_labels = ff.label_molecules(propane_openff.to_topology())[0]
+    dimethyl_ether_openff = dimethyl_ether.to_openff()
+    dimethyl_ether_charges = dimethyl_ether_openff.partial_charges.m_as(offunit.elementary_charge)
+    dimethyl_ether_labels = ff.label_molecules(dimethyl_ether_openff.to_topology())[0]
+    htf = make_htf(mapping=propane_to_dimethyl_ether_mapping, settings=settings)
+    hybrid_system = htf.hybrid_system
+    forces = {force.getName(): force for force in hybrid_system.getForces()}
+
+    return {
+        "htf": htf,
+        "hybrid_system": hybrid_system,
+        "forces": forces,
+        "propane_labels": propane_labels,
+        "dimethyl_ether_labels": dimethyl_ether_labels,
+        "mapping": propane_to_dimethyl_ether_mapping,
+        "propane": propane,
+        "dimethyl_ether": dimethyl_ether,
+        "propane_charges": propane_charges,
+        "dimethyl_ether_charges": dimethyl_ether_charges,
+        "electrostatic_scale": ff.get_parameter_handler("Electrostatics").scale14,
+        "vdW_scale": ff.get_parameter_handler("vdW").scale14,
+        "force_field": ff
+    }
+
+@pytest.fixture(scope="module")
+def htf_propane_chloroethane(propane, chloroethane, propane_to_chloroethane):
+    """Generate the htf for propane to chloroethane."""
+    settings = RelativeHybridTopologyProtocol.default_settings()
+    # make sure we interpolate the 1-4 exceptions involving dummy atoms if present
+    settings.alchemical_settings.turn_off_core_unique_exceptions = True
+    small_ff = settings.forcefield_settings.small_molecule_forcefield
+    if ".offxml" not in small_ff:
+        small_ff += ".offxml"
+    ff = ForceField(small_ff)
+    propane_openff = propane.to_openff()
+    propane_charges = propane_openff.partial_charges.m_as(offunit.elementary_charge)
+    propane_labels = ff.label_molecules(propane_openff.to_topology())[0]
+    chloro_openff = chloroethane.to_openff()
+    chloro_charges = chloro_openff.partial_charges.m_as(offunit.elementary_charge)
+    chloro_labels = ff.label_molecules(chloro_openff.to_topology())[0]
+    htf = make_htf(mapping=propane_to_chloroethane, settings=settings)
+    hybrid_system = htf.hybrid_system
+    forces = {force.getName(): force for force in hybrid_system.getForces()}
+
+    return {
+        "htf": htf,
+        "hybrid_system": hybrid_system,
+        "forces": forces,
+        "propane_labels": propane_labels,
+        "chloro_labels": chloro_labels,
+        "mapping": propane_to_chloroethane,
+        "propane": propane,
+        "chloroethane": chloroethane,
+        "propane_charges": propane_charges,
+        "chloro_charges": chloro_charges,
         "electrostatic_scale": ff.get_parameter_handler("Electrostatics").scale14,
         "vdW_scale": ff.get_parameter_handler("vdW").scale14,
         "force_field": ff
