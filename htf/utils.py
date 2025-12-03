@@ -172,7 +172,7 @@ def _find_dummy_junctions(htf: DevelopmentHybridTopologyFactory) -> dict:
     return junctions
 
 
-def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_factor: float = 0.1) -> DevelopmentHybridTopologyFactory:
+def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_factor: float = 0.1, scale_angles: bool = True) -> DevelopmentHybridTopologyFactory:
     """
     Scale all angles and torsion force constants in the dummy-core junction by the given scale factor.
 
@@ -182,6 +182,8 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
         The hybrid topology factory to modify.
     scale_factor : float, optional
         The factor by which to scale the angles and torsions (0 to 1), by default 0.1.
+    scale_angles : bool, optional
+        Whether to scale angles (True) or torsions (False), by default True.
 
     Returns
     -------
@@ -211,6 +213,9 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
     # As the HTF stores all terms involving dummies in the standard forces we can copy all others directly
     # The interpolated forces only contain terms for the core mapped atoms so we don't need to remove any
     forces_not_to_copy = ["standard_angle_force", "unique_atom_torsion_force"]
+    if not scale_angles:
+        logger.info("Scaling of angles disabled. Only torsions will be softened.")
+        forces_not_to_copy.remove("standard_angle_force")
     for force_name, hybrid_force in hybrid_forces.items():
         if force_name not in forces_not_to_copy:
             logger.info(f"Copying force {force_name} to new hybrid system without modification.")
@@ -218,40 +223,42 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
             softened_hybrid_system.addForce(new_force)
 
     # now apply the softening to the angle and torsion forces
-    # first add a new standard angle and torsion force to the system
-    softened_harmonic_angle_force = openmm.HarmonicAngleForce()
+    # first add a new torsion force to the system
     softened_torsion_force = openmm.PeriodicTorsionForce()
-    softened_hybrid_system.addForce(softened_harmonic_angle_force)
     softened_hybrid_system.addForce(softened_torsion_force)
 
     # get a quick lookup of the forces
     new_hybrid_forces = {force.getName(): force for force in softened_hybrid_system.getForces()}
 
     # process angles
-    logger.info("Processing dummy-core junction angles for softening.")
-    logger.info("Adding softened angles to core_angle_force.")
-    default_hybrid_angle_force = hybrid_forces["standard_angle_force"]
-    softened_custom_angle_force = new_hybrid_forces["CustomAngleForce"]
-    for i in range(default_hybrid_angle_force.getNumAngles()):
-        p1, p2, p3, theta_eq, k = default_hybrid_angle_force.getAngleParameters(i)
-        angle = (p1, p2, p3)
-        # for the angle terms there must be at least one core atom and 1 or 2 dummy atoms
-        # check lambda = 0 first
-        if 1 <= len(dummy_new_atoms.intersection(angle)) < 3:
-            # if we match a new unique atom the angle must be softened at lambda = 0
-            # add the term to the interpolated custom angle force
-            new_k = k * scale_factor
-            logger.info(f"Softening angle {angle} at lambda=0: original k = {k}, new k = {new_k}")
-            softened_custom_angle_force.addAngle(p1, p2, p3, [theta_eq, new_k, theta_eq, k])
-        elif 1 <= len(dummy_old_atoms.intersection(angle)) < 3:
-            # if we match an old unique atom the angle must be softened at lambda = 1
-            # add the term to the interpolated custom angle force
-            new_k = k * scale_factor
-            logger.info(f"Softening angle {angle} at lambda=1: original k = {k}, new k = {new_k}")
-            softened_custom_angle_force.addAngle(p1, p2, p3, [theta_eq, k, theta_eq, new_k])
-        else:
-            # the term does not involve any dummy atoms, so we can just copy it
-            softened_harmonic_angle_force.addAngle(p1, p2, p3, theta_eq, k)
+    if scale_angles:
+        # if we scale angles add a new angle force to the system
+        softened_harmonic_angle_force = openmm.HarmonicAngleForce()
+        softened_hybrid_system.addForce(softened_harmonic_angle_force)
+        logger.info("Processing dummy-core junction angles for softening.")
+        logger.info("Adding softened angles to core_angle_force.")
+        default_hybrid_angle_force = hybrid_forces["standard_angle_force"]
+        softened_custom_angle_force = new_hybrid_forces["CustomAngleForce"]
+        for i in range(default_hybrid_angle_force.getNumAngles()):
+            p1, p2, p3, theta_eq, k = default_hybrid_angle_force.getAngleParameters(i)
+            angle = (p1, p2, p3)
+            # for the angle terms there must be at least one core atom and 1 or 2 dummy atoms
+            # check lambda = 0 first
+            if 1 <= len(dummy_new_atoms.intersection(angle)) < 3:
+                # if we match a new unique atom the angle must be softened at lambda = 0
+                # add the term to the interpolated custom angle force
+                new_k = k * scale_factor
+                logger.info(f"Softening angle {angle} at lambda=0: original k = {k}, new k = {new_k}")
+                softened_custom_angle_force.addAngle(p1, p2, p3, [theta_eq, new_k, theta_eq, k])
+            elif 1 <= len(dummy_old_atoms.intersection(angle)) < 3:
+                # if we match an old unique atom the angle must be softened at lambda = 1
+                # add the term to the interpolated custom angle force
+                new_k = k * scale_factor
+                logger.info(f"Softening angle {angle} at lambda=1: original k = {k}, new k = {new_k}")
+                softened_custom_angle_force.addAngle(p1, p2, p3, [theta_eq, k, theta_eq, new_k])
+            else:
+                # the term does not involve any dummy atoms, so we can just copy it
+                softened_harmonic_angle_force.addAngle(p1, p2, p3, theta_eq, k)
 
     # process torsions
     logger.info("Processing dummy-core junction torsions for softening.")

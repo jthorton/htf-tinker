@@ -179,7 +179,8 @@ def make_hybrid_factory(edge, system_generator):
         stateB_system, stateB_positions, stateB_topology,
         old_to_new_atom_map=ligand_mappings['old_to_new_atom_map'],
         old_to_new_core_atom_map=ligand_mappings['old_to_new_core_atom_map'],
-        softcore_LJ_v2=True
+        softcore_LJ_v2=True,
+        interpolate_old_and_new_14s=True,
     )
     return hybrid_factory
 
@@ -216,7 +217,13 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
     default=1.0,
     help="Scaling factor applied to dummy-core junction angle and torsion force constants."
 )
-def main(ligands: Path, output: Path, network: None | Path, scale_factor: float):
+@click.option(
+    "--scale-angles/--no-scale-angles",
+    help="Whether to scale angle force constants at dummy-core junctions.",
+    is_flag=True,
+    default=True,
+)
+def main(ligands: Path, output: Path, network: None | Path, scale_factor: float, scale_angles: bool):
     """
     Command line interface for running a minimisation workflow.
     This can be configured using a YAML file.
@@ -273,7 +280,8 @@ def main(ligands: Path, output: Path, network: None | Path, scale_factor: float)
         htf = make_hybrid_factory(edge, system_generator)
         if scale_factor != 1.0:
             # build the new scaled htf
-            htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor)
+            logger.info(f"Scaling dummy-core junction force constants by {scale_factor}, scale_angles={scale_angles}")
+            htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor, scale_angles=scale_angles)
         # c. Get the simulation object
         hybrid_system = htf.hybrid_system
         integrator = openmm.LangevinIntegrator(300*unit.kelvin, 1/unit.picosecond, 1*unit.femtoseconds)

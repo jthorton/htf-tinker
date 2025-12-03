@@ -73,7 +73,7 @@ def test_chloro_ethane_scale_factor_angles(htf_chloro_ethane):
     mapping = htf_chloro_ethane["mapping"]
     chloro_labels = htf_chloro_ethane["chloro_labels"]
     ethane_labels = htf_chloro_ethane["ethane_labels"]
-    softened_htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor)
+    softened_htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor, scale_angles=True)
     softened_hybrid_system = softened_htf.hybrid_system
     forces = {force.getName(): force for force in softened_hybrid_system.getForces()}
 
@@ -140,14 +140,78 @@ def test_chloro_ethane_scale_factor_angles(htf_chloro_ethane):
             # lambda_1 k
             assert params[3] == ethane_angle.k.m_as(offunit.kilojoule_per_mole / offunit.radian**2)
 
-
-def test_chloro_ethane_scale_factor_torsions(htf_chloro_ethane):
+def test_chloro_ethane_no_scale_angles(htf_chloro_ethane):
     htf = htf_chloro_ethane["htf"]
     scale_factor = 0.1
     mapping = htf_chloro_ethane["mapping"]
     chloro_labels = htf_chloro_ethane["chloro_labels"]
     ethane_labels = htf_chloro_ethane["ethane_labels"]
-    softened_htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor)
+    # do not scale the angles
+    softened_htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor, scale_angles=False)
+    softened_hybrid_system = softened_htf.hybrid_system
+    forces = {force.getName(): force for force in softened_hybrid_system.getForces()}
+
+    # make sure the angles are at the deafult values
+    # there should be 6 standard angle force terms (non-interpolated)
+    # these should cover the 3 angles in each end state which involve a dummy atom
+    standard_angle_force = forces["HarmonicAngleForce"]
+    num_angles = standard_angle_force.getNumAngles()
+    assert num_angles == 6
+
+    for i in range(num_angles):
+        p1, p2, p3, angle, k = standard_angle_force.getAngleParameters(i)
+        # if the starting atom index is 0 it is a chloroethane angle else ethane
+        if p1 == 0 or p3 ==0:
+            chloro_angle = chloro_labels["Angles"][(p1, p2, p3)]
+            assert angle == chloro_angle.angle.m_as(offunit.radian) * unit.radian
+            assert k == chloro_angle.k.m_as(offunit.kilojoule_per_mole / offunit.radian ** 2) * unit.kilojoule_per_mole / unit.radian**2
+        else:
+            # manually map the Cl - H
+            e1 = 0
+            e2 = mapping.componentA_to_componentB[p2]
+            e3 = mapping.componentA_to_componentB[p3]
+            ethane_angle = ethane_labels["Angles"][(e1, e2, e3)]
+            assert angle == ethane_angle.angle.m_as(offunit.radian) * unit.radian
+            assert k == ethane_angle.k.m_as(offunit.kilojoule_per_mole / offunit.radian ** 2) * unit.kilojoule_per_mole / unit.radian**2
+
+    # there should then be 9 interpolated (fully mapped) angle terms
+    custom_angle_force = forces["CustomAngleForce"]
+    # there should be a single global parameter for lambda
+    assert custom_angle_force.getNumGlobalParameters() == 1
+    # make sure it has the correct name
+    assert custom_angle_force.getGlobalParameterName(0) == "lambda_angles"
+
+    num_angles = custom_angle_force.getNumAngles()
+    assert num_angles == 9
+    for i in range(num_angles):
+        p1, p2, p3, params = custom_angle_force.getAngleParameters(i)
+        # p1, p2, p3 are the index in chloroethane get the expected parameters from the labels
+        chloro_angle = chloro_labels["Angles"][(p1, p2, p3)]
+        # make sure the initial parameters match chloroethane
+        # this also implicitly checks the per angle parameters have been entered in the expected order
+        assert params[0] == chloro_angle.angle.m_as(offunit.radian)
+        assert params[1] == chloro_angle.k.m_as(offunit.kilojoule_per_mole / offunit.radian ** 2)
+        # then check the ethane parameters
+        # map the index first
+        e1 = mapping.componentA_to_componentB[p1]
+        e2 = mapping.componentA_to_componentB[p2]
+        e3 = mapping.componentA_to_componentB[p3]
+        ethane_angle = ethane_labels["Angles"][(e1, e2, e3)]
+        assert params[2] == ethane_angle.angle.m_as(offunit.radian)
+        assert params[3] == ethane_angle.k.m_as(offunit.kilojoule_per_mole / offunit.radian ** 2)
+
+
+@pytest.mark.parametrize("scale_angles", [
+    pytest.param(True, id="Scale angles True"),
+    pytest.param(False, id="Scale angles False"),
+])
+def test_chloro_ethane_scale_factor_torsions(htf_chloro_ethane, scale_angles):
+    htf = htf_chloro_ethane["htf"]
+    scale_factor = 0.1
+    mapping = htf_chloro_ethane["mapping"]
+    chloro_labels = htf_chloro_ethane["chloro_labels"]
+    ethane_labels = htf_chloro_ethane["ethane_labels"]
+    softened_htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor, scale_angles=scale_angles)
     softened_hybrid_system = softened_htf.hybrid_system
     forces = {force.getName(): force for force in softened_hybrid_system.getForces()}
 
@@ -242,7 +306,7 @@ def test_toluene_to_pyridine_scale_factor_angles(htf_toluene_pyridine):
     mapping = htf_toluene_pyridine["mapping"]
     toluene_labels = htf_toluene_pyridine["toluene_labels"]
     pyridine_labels = htf_toluene_pyridine["pyridine_labels"]
-    softened_htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor)
+    softened_htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor, scale_angles=True)
     softened_hybrid_system = softened_htf.hybrid_system
     forces = {force.getName(): force for force in softened_hybrid_system.getForces()}
 
@@ -308,16 +372,20 @@ def test_toluene_to_pyridine_scale_factor_angles(htf_toluene_pyridine):
 
     assert scaled_angles == 5
 
-def test_toluene_to_pyridine_scale_factor_torsions(htf_toluene_pyridine):
+@pytest.mark.parametrize("scale_angles", [
+    pytest.param(True, id="Scale angles True"),
+    pytest.param(False, id="Scale angles False"),
+])
+def test_toluene_to_pyridine_scale_factor_torsions(htf_toluene_pyridine, scale_angles):
     """Make sure that the scaling factor is applied correctly to the torsion terms in a more complex system involving
-    torsions with two dummy atoms and improper torsions.
+    torsions with two dummy atoms and improper torsions, even if angles are not scaled.
     """
     htf = htf_toluene_pyridine["htf"]
     scale_factor = 0.1
     mapping = htf_toluene_pyridine["mapping"]
     toluene_labels = htf_toluene_pyridine["toluene_labels"]
     pyridine_labels = htf_toluene_pyridine["pyridine_labels"]
-    softened_htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor)
+    softened_htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor, scale_angles=scale_angles)
     softened_hybrid_system = softened_htf.hybrid_system
     forces = {force.getName(): force for force in softened_hybrid_system.getForces()}
 
