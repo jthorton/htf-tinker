@@ -1,0 +1,39 @@
+{
+    "lambda_0": {
+        "removed_angles": [
+            "12,19,33"
+        ],
+        "removed_dihedrals": [
+            "12,19,33,36",
+            "12,19,33,34",
+            "12,19,33,35",
+            "9,12,19,33",
+            "14,12,19,33"
+        ],
+        "stiffened_angles": [
+            [
+                18,
+                19,
+                33
+            ]
+        ],
+        "softened_angles": {}
+    },
+    "lambda_1": {
+        "removed_angles": [
+            "12,19,32"
+        ],
+        "removed_dihedrals": [
+            "9,12,19,32",
+            "14,12,19,32"
+        ],
+        "stiffened_angles": [
+            [
+                18,
+                19,
+                32
+            ]
+        ],
+        "softened_angles": {}
+    }
+}
