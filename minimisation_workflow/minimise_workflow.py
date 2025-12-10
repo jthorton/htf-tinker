@@ -8,7 +8,7 @@ Workflow steps:
 4. Collect the positions of the minimised ligands and write them to an output SDF file.
 5. Calculate the RMSD of the hybrid end states to the pure end states and calculate the relative energy difference using the pure topologies and save to CSV for analysis.
 """
-from htf.utils import _scale_angles_and_torsions
+from htf.utils import _scale_angles_and_torsions, load_ghostly_corrections, apply_ghostly_corrections
 import click
 from pathlib import Path
 import logging
@@ -223,7 +223,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
     is_flag=True,
     default=True,
 )
-def main(ligands: Path, output: Path, network: None | Path, scale_factor: float, scale_angles: bool):
+@click.option(
+    "--ghostly-files",
+    type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Path to ghostly files for use in strain corrections.",)
+def main(ligands: Path, output: Path, network: None | Path, scale_factor: float, scale_angles: bool, ghostly_files: Path):
     """
     Command line interface for running a minimisation workflow.
     This can be configured using a YAML file.
@@ -235,6 +240,8 @@ def main(ligands: Path, output: Path, network: None | Path, scale_factor: float,
     4. Collect the positions of the minimised ligands and write them to an output SDF file.
     5. Calculate the RMSD of the hybrid end states to the pure end states and calculate the relative energy difference using the pure topologies and save to CSV for analysis.
     """
+    if scale_factor != 1.0 and ghostly_files is not None:
+        raise RuntimeError("Cannot use ghostly files when scaling force constants must be run separately.")
     platform = openmm.Platform.getPlatformByName("CPU")
     # create the output directory if it doesn't exist
     output.mkdir(parents=True, exist_ok=True)
@@ -269,7 +276,8 @@ def main(ligands: Path, output: Path, network: None | Path, scale_factor: float,
 
     # create the system generator
     system_generator = SystemGenerator(
-        small_molecule_forcefield="openff-2.2.0",
+        # make sure to the same forcefield as out RBFE and hydration benchmarks
+        small_molecule_forcefield="openff-2.2.1",
         nonperiodic_forcefield_kwargs={'nonbondedMethod': app.NoCutoff},
         cache=str(output / "ff_cache.json")
     )
@@ -282,6 +290,15 @@ def main(ligands: Path, output: Path, network: None | Path, scale_factor: float,
             # build the new scaled htf
             logger.info(f"Scaling dummy-core junction force constants by {scale_factor}, scale_angles={scale_angles}")
             htf = _scale_angles_and_torsions(htf=htf, scale_factor=scale_factor, scale_angles=scale_angles)
+        elif ghostly_files is not None:
+            logger.info(f"Applying ghostly force field corrections from")
+            # now we need to find the correction file for this edge
+            correction_file = ghostly_files / f"{edge.componentA.name}_to_{edge.componentB.name}" / "combined_system_ghostly_modifications.json"
+            if not correction_file.exists():
+                raise FileNotFoundError(f"Ghostly correction file {correction_file} does not exist.")
+            corrections = load_ghostly_corrections(correction_file.as_posix())
+            htf = apply_ghostly_corrections(htf, corrections)
+
         # c. Get the simulation object
         hybrid_system = htf.hybrid_system
         integrator = openmm.LangevinIntegrator(300*unit.kelvin, 1/unit.picosecond, 1*unit.femtoseconds)

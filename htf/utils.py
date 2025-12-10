@@ -12,13 +12,10 @@ import math
 import logging
 import json
 import ast
-
-logger = logging.getLogger(__name__)
-import copy
-import logging
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
+
 
 def make_htf(mapping: LigandAtomMapping, settings, protein: ProteinComponent = None, solvent: SolventComponent = None) -> DevelopmentHybridTopologyFactory:
     """Code copied from the RBFE protocol to make an HTF."""
@@ -404,6 +401,9 @@ def apply_ghostly_corrections(htf: DevelopmentHybridTopologyFactory, corrections
                 print(f"Applying ghostly angle correction for angle {angle}: "
                       f"lambda_0 k = {lambda_0_k}, theta_eq = {lambda_0_theta_eq}; "
                       f"lambda_1 k = {lambda_1_k}, theta_eq = {lambda_1_theta_eq}")
+                logger.info(f"Applying ghostly angle correction for angle {angle}: "
+                      f"lambda_0 k = {lambda_0_k}, theta_eq = {lambda_0_theta_eq}; "
+                      f"lambda_1 k = {lambda_1_k}, theta_eq = {lambda_1_theta_eq}")
                 custom_angle_force.addAngle(p1, p2, p3,
                                             [lambda_0_theta_eq, lambda_0_k,
                                             lambda_1_theta_eq, lambda_1_k])
@@ -436,6 +436,9 @@ def apply_ghostly_corrections(htf: DevelopmentHybridTopologyFactory, corrections
             if lambda_0_k != lambda_1_k:
                 # add the term to the interpolated custom torsion force
                 print(f"Applying ghostly torsion correction for torsion {torsion}: "
+                      f"lambda_0 k = {lambda_0_k}; "
+                      f"lambda_1 k = {lambda_1_k}")
+                logger.info(f"Applying ghostly torsion correction for torsion {torsion}: "
                       f"lambda_0 k = {lambda_0_k}; "
                       f"lambda_1 k = {lambda_1_k}")
                 custom_torsion_force.addTorsion(p1, p2, p3, p4,
