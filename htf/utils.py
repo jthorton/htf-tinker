@@ -7,10 +7,11 @@ import openmm
 from gufe import LigandAtomMapping, ProteinComponent, SolventComponent
 from openfe.protocols.openmm_rfe import _rfe_utils
 from openfe.protocols.openmm_utils import system_creation
-import ast
 import copy
 import math
 import logging
+import json
+import ast
 
 logger = logging.getLogger(__name__)
 
@@ -131,119 +132,25 @@ def make_htf(mapping: LigandAtomMapping, settings, protein: ProteinComponent = N
         interpolate_old_and_new_14s=settings.alchemical_settings.turn_off_core_unique_exceptions,
     )
 
-def _parse_ghostly_output(ghostly_output_path: str) -> dict:
-    """Parse the output file from Ghostly into a dictionary of applied corrections which can be processed further."""
-    corrections = {
-        "lambda_0":
-            {"bridges":{}, "removed_angles": [], "removed_dihedrals": [], "stiffened_angles": [], "softened_angles": {}},
-        "lambda_1":
-            {"bridges":{}, "removed_angles": [], "removed_dihedrals": [], "stiffened_angles": [], "softened_angles": {}}
-    }
-    current_lambda = None
-    bridges = False
-    current_bridge = None
-    bridge_id = None
+def load_ghostly_corrections(ghostly_output_path: str) -> dict:
+    """Parse the Ghostly modification output json file to extract the corrections to be applied to the HTF."""
     with open(ghostly_output_path, 'r') as f:
-        for line in f.readlines():
-            # split out the debugging prefix
-            _, line = line.strip().split(" - ", 1)
-
-            # control flags for bridges
-            if "Ghost atom bridges at lambda = 0" in line:
-                current_lambda = "lambda_0"
-                bridges = True
-                continue
-            elif "Ghost atom bridges at lambda = 1" in line:
-                current_lambda = "lambda_1"
-                bridges = True
-                continue
-            elif "Bridge" in line and bridges:
-                # Example output
-                # Bridge 0: 1
-                # start of a new bridge
-                parts = line.strip().split()
-                bridge_id = int(parts[1][0])
-                current_bridge = int(parts[-1])
-                corrections[current_lambda]["bridges"][bridge_id] = {"bridge_atom": current_bridge}
-                continue
-            elif "ghosts" in line and bridges:
-                # Example output
-                # ghosts: [0]
-                parts = line.strip().split()
-                ghosts = ast.literal_eval(parts[1])
-                corrections[current_lambda]["bridges"][bridge_id]["ghosts"] = ghosts
-                continue
-            elif "physical" in line and bridges:
-                # Example output
-                # physical: [2,3,4,8]
-                parts = line.strip().split()
-                physicals = ast.literal_eval(parts[1])
-                corrections[current_lambda]["bridges"][bridge_id]["physical"] = physicals
-                continue
-            elif "type" in line and bridges:
-                # Example output
-                # type: 4
-                parts = line.strip().split()
-                btype = int(parts[1])
-                corrections[current_lambda]["bridges"][bridge_id]["type"] = btype
-                continue
-            # control flags for modifications
-            elif "Applying modifications" in line:
-                # Example output
-                # Applying modifications to triple ghost junction at λ = 0:
-                bridges = False
-                if "λ = 0:" in line:
-                    current_lambda = "lambda_0"
-                elif "λ = 1:" in line:
-                    current_lambda = "lambda_1"
-                continue
-            elif "Removing angle" in line and not bridges:
-                # Example output
-                # Removing angle: [2-1-8], 66.7563 [theta - 1.91878]^2
-                parts = line.strip().split()
-                angle = tuple(ast.literal_eval(parts[2][:-1].replace("-", ",")))
-                corrections[current_lambda]["removed_angles"].append(angle)
-                continue
-            elif "Removing dihedral" in line and not bridges:
-                # Example output
-                # Removing dihedral: [5-2-1-8], 0.227995 cos(3 phi) + 0.227995
-                parts = line.strip().split()
-                dihedral = tuple(ast.literal_eval(parts[2][:-1].replace("-", ",")))
-                corrections[current_lambda]["removed_dihedrals"].append(dihedral)
-                continue
-            elif "Stiffening angle" in line and not bridges:
-                # angles are always stiffened to 100 kcal/mol/rad^2 and an equilibrium of 90 degrees
-                # Example output
-                # Stiffening angle: [4-1-8], 36.7766 [theta - 1.89114]^2 --> 100 [theta - 1.5708]^2
-                parts = line.strip().split()
-                angle = tuple(ast.literal_eval(parts[2][:-1].replace("-", ",")))
-                corrections[current_lambda]["stiffened_angles"].append(angle)
-                continue
-            elif "Softening angle" in line and not bridges:
-                # angles are later optimised by default in ghostly, so we just need to track which ones were softened
-                # Example output
-                # Softening angle: [17-19-30], 46.9 [theta - 1.8984]^2 --> 0.05 [theta - 1.8984]^2
-                parts = line.strip().split()
-                angle = tuple(ast.literal_eval(parts[2][:-1].replace("-", ",")))
-                # add the default softening parameters k = 0.05 kcal/mol/rad^2 and theta stays the same
-                corrections[current_lambda]["softened_angles"][angle] = {"k": 0.05}
-                continue
-            elif "Optimising angle" in line and not bridges:
-                # if the softened angle is optimised, we need to update its parameters
-                # Example output
-                # Optimising angle: [17-19-30], 0.05 [theta - 1.8984]^2 --> 5 [theta - 1.66289]^2 (std err: 0.006 radian)
-                parts = line.strip().split()
-                angle = tuple(ast.literal_eval(parts[2][:-1].replace("-", ",")))
-                new_params = line.strip().split("-->")[1].split()
-                new_k = int(new_params[0])
-                new_equ_theta = float(new_params[3].split("]")[0])
-                corrections[current_lambda]["softened_angles"][angle] = {"k": new_k, "theta_eq": new_equ_theta}
-                continue
-            elif "junction" in line:
-                continue
-            else:
-                raise RuntimeError(f"Could not parse line in Ghostly output: {line}")
-
+        corrections = json.load(f)
+        # convert the string keys back to tuples
+        for lambda_key in corrections.keys():
+            for correction_type in corrections[lambda_key].keys():
+                # these are stings for some reason, convert them back to tuples
+                if correction_type in ["removed_angles", "removed_dihedrals"]:
+                    corrections[lambda_key][correction_type] = [ast.literal_eval(tup_str) for tup_str in corrections[lambda_key][correction_type]]
+                    # this is a list so we need to convert each to a tuple
+                elif correction_type == "stiffened_angles":
+                    corrections[lambda_key][correction_type] = [tuple(angle) for angle in corrections[lambda_key][correction_type]]
+                elif correction_type == "softened_angles":
+                    new_dict = {}
+                    for tup_str, params in corrections[lambda_key][correction_type].items():
+                        tup = ast.literal_eval(tup_str)
+                        new_dict[tup] = params
+                    corrections[lambda_key][correction_type] = new_dict
     return corrections
 
 
@@ -251,6 +158,8 @@ def apply_ghostly_corrections(htf: DevelopmentHybridTopologyFactory, corrections
     """Apply the ghostly corrections parsed from the output file to the HTF."""
 
     htf_corrected = copy.deepcopy(htf)
+    dummy_old_atoms = htf_corrected._atom_classes["unique_old_atoms"]
+    dummy_new_atoms = htf_corrected._atom_classes["unique_new_atoms"]
 
     new_hybrid_system = openmm.System()
     # add all the particles
@@ -262,7 +171,6 @@ def apply_ghostly_corrections(htf: DevelopmentHybridTopologyFactory, corrections
         new_hybrid_system.addConstraint(p1, p2, dist)
 
     hybrid_forces = htf._hybrid_system_forces
-    print(hybrid_forces)
     # copy all forces which do not need to be modified
     # We are only modifying angle and torsion forces with ghostly corrections
     # As the HTF stores all terms involving ghosts in the standard forces we can copy all others directly
@@ -276,11 +184,12 @@ def apply_ghostly_corrections(htf: DevelopmentHybridTopologyFactory, corrections
     # now apply the ghostly corrections to the angle and torsion forces
     # first add a new standard angle and torsion force to the system
     new_harmonic_angle_force = openmm.HarmonicAngleForce()
-    new_torsion_force = openmm.PeriodicTorsionForce()
     new_hybrid_system.addForce(new_harmonic_angle_force)
+    new_torsion_force = openmm.PeriodicTorsionForce()
     new_hybrid_system.addForce(new_torsion_force)
     # get a quick lookup of the forces
     new_hybrid_forces = {force.getName(): force for force in new_hybrid_system.getForces()}
+
     # process angles
     custom_angle_force = new_hybrid_forces["CustomAngleForce"]
     old_hybrid_angle_force = hybrid_forces["standard_angle_force"]
@@ -288,7 +197,7 @@ def apply_ghostly_corrections(htf: DevelopmentHybridTopologyFactory, corrections
         p1, p2, p3, theta_eq, k = old_hybrid_angle_force.getAngleParameters(i)
         # check if we have one ghost atom for this angle
         angle = (p1, p2, p3)
-        if len(htf_corrected._atom_classes["unique_old_atoms"].intersection(angle)) <= 2 or len(htf_corrected._atom_classes["unique_new_atoms"].intersection(angle)) <= 2:
+        if 1<= len(dummy_old_atoms.intersection(angle)) < 3 or 1<= len(dummy_new_atoms.intersection(angle)) < 3:
             angle_reversed = (p3, p2, p1)
             # set up containers for the end state values
             lambda_0_k = k
@@ -307,24 +216,32 @@ def apply_ghostly_corrections(htf: DevelopmentHybridTopologyFactory, corrections
             elif angle in corrections["lambda_1"]["stiffened_angles"] or angle_reversed in corrections["lambda_1"]["stiffened_angles"]:
                 lambda_1_k = 100.0 * unit.kilocalories_per_mole / (unit.radian ** 2)  # default stiffening k value
                 lambda_1_theta_eq = 0.5 * math.pi * unit.radian  # 90 degrees
-            elif angle in corrections["lambda_0"]["softened_angles"] or angle_reversed in corrections["lambda_0"]["softened_angles"]:
-                soften_params = corrections["lambda_0"]["softened_angles"].get(angle, corrections["lambda_0"]["softened_angles"].get(angle_reversed))
+                # check for softened angles
+            elif (prob_angle:= angle) in corrections["lambda_0"]["softened_angles"] or (prob_angle:= angle_reversed) in corrections["lambda_0"]["softened_angles"]:
+                soften_params = corrections["lambda_0"]["softened_angles"][prob_angle]
                 lambda_0_k = soften_params["k"] * unit.kilocalories_per_mole / (unit.radian ** 2)
-                if "theta_eq" in soften_params:
-                    lambda_0_theta_eq = soften_params["theta_eq"] * unit.radian
-            # add the term to the interpolated custom angle force
-            print(f"Applying ghostly angle correction for angle {angle}: "
-                  f"lambda_0 k = {lambda_0_k}, theta_eq = {lambda_0_theta_eq}; "
-                  f"lambda_1 k = {lambda_1_k}, theta_eq = {lambda_1_theta_eq}")
-            custom_angle_force.addAngle(p1, p2, p3,
-                                        [lambda_0_theta_eq, lambda_0_k,
-                                        lambda_1_theta_eq, lambda_1_k])
+                lambda_0_theta_eq = soften_params["theta0"] * unit.radian
+            elif (prob_angle:= angle) in corrections["lambda_1"]["softened_angles"] or (prob_angle:= angle_reversed) in corrections["lambda_1"]["softened_angles"]:
+                soften_params = corrections["lambda_1"]["softened_angles"][prob_angle]
+                lambda_1_k = soften_params["k"] * unit.kilocalories_per_mole / (unit.radian ** 2)
+                lambda_1_theta_eq = soften_params["theta0"] * unit.radian
+
+            # some angles involving dummy atoms need to be kept to ensure 3 redundant connections
+            if lambda_0_k != lambda_1_k or lambda_0_theta_eq != lambda_1_theta_eq:
+                # add the term to the interpolated custom angle force
+                print(f"Applying ghostly angle correction for angle {angle}: "
+                      f"lambda_0 k = {lambda_0_k}, theta_eq = {lambda_0_theta_eq}; "
+                      f"lambda_1 k = {lambda_1_k}, theta_eq = {lambda_1_theta_eq}")
+                custom_angle_force.addAngle(p1, p2, p3,
+                                            [lambda_0_theta_eq, lambda_0_k,
+                                            lambda_1_theta_eq, lambda_1_k])
+            else:
+                # both k and theta_eq values are the same, just add to the standard angle force
+                new_harmonic_angle_force.addAngle(p1, p2, p3, theta_eq, k)
 
         else:
             # the term does not involve any ghost atoms, so we can just copy it
             new_harmonic_angle_force.addAngle(p1, p2, p3, theta_eq, k)
-    print(openmm.XmlSerializer.serialize(custom_angle_force))
-    print(openmm.XmlSerializer.serialize(new_harmonic_angle_force))
 
     # process torsions
     custom_torsion_force = new_hybrid_forces["CustomTorsionForce"]
@@ -333,7 +250,7 @@ def apply_ghostly_corrections(htf: DevelopmentHybridTopologyFactory, corrections
         p1, p2, p3, p4, periodicity, phase, k = old_hybrid_torsion_force.getTorsionParameters(i)
         # check if we have one ghost atom for this torsion
         torsion = (p1, p2, p3, p4)
-        if len(htf_corrected._atom_classes["unique_old_atoms"].intersection(torsion)) <= 3 or len(htf_corrected._atom_classes["unique_new_atoms"].intersection(torsion)) <= 3:
+        if 1<= len(dummy_old_atoms.intersection(torsion)) < 4 or 1<= len(dummy_new_atoms.intersection(torsion)) < 4:
             torsion_reversed = (p4, p3, p2, p1)
             # set up containers for the end state values
             lambda_0_k = k
@@ -343,19 +260,22 @@ def apply_ghostly_corrections(htf: DevelopmentHybridTopologyFactory, corrections
                 lambda_0_k = 0.0 * unit.kilocalories_per_mole
             elif torsion in corrections["lambda_1"]["removed_dihedrals"] or torsion_reversed in corrections["lambda_1"]["removed_dihedrals"]:
                 lambda_1_k = 0.0 * unit.kilocalories_per_mole
-            # add the term to the interpolated custom torsion force
-            print(f"Applying ghostly torsion correction for torsion {torsion}: "
-                  f"lambda_0 k = {lambda_0_k}; "
-                  f"lambda_1 k = {lambda_1_k}")
-            custom_torsion_force.addTorsion(p1, p2, p3, p4,
-                                            [periodicity, phase,
-                                            lambda_0_k, periodicity,
-                                             phase, lambda_1_k])
+            # some dihedrals involving ghost atoms need to be kept to ensure 3 redundant connections
+            if lambda_0_k != lambda_1_k:
+                # add the term to the interpolated custom torsion force
+                print(f"Applying ghostly torsion correction for torsion {torsion}: "
+                      f"lambda_0 k = {lambda_0_k}; "
+                      f"lambda_1 k = {lambda_1_k}")
+                custom_torsion_force.addTorsion(p1, p2, p3, p4,
+                                                [periodicity, phase,
+                                                lambda_0_k, periodicity,
+                                                 phase, lambda_1_k])
+            else:
+                # both k values are the same, just add to the standard torsion force
+                new_torsion_force.addTorsion(p1, p2, p3, p4, periodicity, phase, k)
         else:
             # the term does not involve any ghost atoms, so we can just copy it
             new_torsion_force.addTorsion(p1, p2, p3, p4, periodicity, phase, k)
-    print(openmm.XmlSerializer.serialize(custom_torsion_force))
-    print(openmm.XmlSerializer.serialize(new_torsion_force))
 
     htf_corrected._hybrid_system = new_hybrid_system
     # set the hybrid system forces dict to the new one
