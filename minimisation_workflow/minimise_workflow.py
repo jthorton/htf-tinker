@@ -41,6 +41,7 @@ from collections import defaultdict
 from yammbs.analysis import get_internal_coordinate_rmsds
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
 
 sns.set_context("talk")
 
@@ -295,7 +296,8 @@ def main(ligands: Path, output: Path, network: None | Path, scale_factor: float,
             # now we need to find the correction file for this edge
             correction_file = ghostly_files / f"{edge.componentA.name}_to_{edge.componentB.name}" / "combined_system_ghostly_modifications.json"
             if not correction_file.exists():
-                raise FileNotFoundError(f"Ghostly correction file {correction_file} does not exist.")
+                logger.warning(f"Ghostly correction file {correction_file} does not exist skipping edge {edge.componentA.name}-{edge.componentB.name}.")
+                continue
             corrections = load_ghostly_corrections(correction_file.as_posix())
             htf = apply_ghostly_corrections(htf, corrections)
 
