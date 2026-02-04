@@ -183,49 +183,6 @@ def chlorobenzene_to_benzene_mapping(chlorobenzene, benzene):
 
 
 @pytest.fixture(scope="module")
-def hsp90_11_to_12_mapping(hsp90_11, hsp90_12):
-    """Return a mapping from HSP90 ligand 11 to ligand 12."""
-    return LigandAtomMapping(
-        componentA=hsp90_11,
-        componentB=hsp90_12,
-        componentA_to_componentB={
-            20: 20,
-            21: 21,
-            22: 22,
-            23: 23,
-            24: 24,
-            25: 25,
-            26: 26,
-            27: 27,
-            28: 28,
-            29: 29,
-            30: 30,
-            31: 35,
-            0: 0,
-            1: 1,
-            2: 2,
-            3: 3,
-            4: 4,
-            5: 5,
-            6: 6,
-            7: 7,
-            8: 8,
-            9: 9,
-            10: 10,
-            11: 11,
-            12: 12,
-            13: 13,
-            14: 14,
-            15: 15,
-            16: 16,
-            17: 17,
-            18: 18,
-            19: 19,
-        },
-    )
-
-
-@pytest.fixture(scope="module")
 def toluene_to_pyridine_mapping(toluene, pyridine):
     """Return a mapping from toluene to pyridine."""
     return LigandAtomMapping(
@@ -269,8 +226,8 @@ def t4_lysozyme_solvated():
             (f / "t4_lysozyme_data" / "t4_lysozyme_solvated.pdb").as_posix()
         )
 
-
-@pytest.fixture(scope="module")
+# all HTFs must use the function scope as we modify them in place due to undefined behavior when using a deepcopy
+@pytest.fixture(scope="function")
 def htf_chloro_fluoroethane(
     chloroethane, fluoroethane, chloroethane_to_fluoroethane_mapping
 ):
@@ -309,7 +266,7 @@ def htf_chloro_fluoroethane(
     }
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def htf_chloro_ethane(chloroethane, ethane, chloroethane_to_ethane_mapping):
     """Generate the htf for chloroethane to ethane with interpolate 1-4s on!"""
     settings = RelativeHybridTopologyProtocol.default_settings()
@@ -403,7 +360,7 @@ def apply_box_vectors_and_fix_nn_force(
                 force.setUseSwitchingFunction(False)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def htf_chlorobenzene_fluorobenzene(
     chlorobenzene,
     fluorobenzene,
@@ -452,7 +409,7 @@ def htf_chlorobenzene_fluorobenzene(
     }
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def htf_chlorobenzene_benzene(
     chlorobenzene, benzene, chlorobenzene_to_benzene_mapping, t4_lysozyme_solvated
 ):
@@ -505,23 +462,17 @@ def ghostly_output_chloroethane_to_ethane():
         return (f / "ghostly" / "chloroethane_ethane.json").as_posix()
 
 
-@pytest.fixture
-def ghostly_output_hsp90_11_to_12():
-    with resources.files("htf.tests.data") as f:
-        return (f / "ghostly" / "hsp90_11_hsp90_12.json").as_posix()
-
-
 @pytest.fixture()
 def chloroethane_ethane_ghostly_modifications():
     return {
         "lambda_0": {
-            "removed_angles": [],
-            "removed_dihedrals": [
+            "removed_angles": set(),
+            "removed_dihedrals": {
                 (6, 2, 1, 8),
                 (7, 2, 1, 8),
                 (5, 2, 1, 8),
-            ],
-            "stiffened_angles": [],
+            },
+            "stiffened_angles": set(),
             "softened_angles": {
                 (4, 1, 8): {"k": 5.0, "theta0": 2.1329879928506985},
                 (2, 1, 8): {"k": 5.0, "theta0": 1.9101780962868387},
@@ -529,9 +480,9 @@ def chloroethane_ethane_ghostly_modifications():
             },
         },
         "lambda_1": {
-            "removed_angles": [],
-            "removed_dihedrals": [(0, 1, 2, 6), (0, 1, 2, 7), (0, 1, 2, 5)],
-            "stiffened_angles": [],
+            "removed_angles": set(),
+            "removed_dihedrals": {(0, 1, 2, 6), (0, 1, 2, 7), (0, 1, 2, 5)},
+            "stiffened_angles": set(),
             "softened_angles": {
                 (0, 1, 4): {"k": 5.0, "theta0": 2.230554843104804},
                 (0, 1, 2): {"k": 5.0, "theta0": 1.8982497804952694},
@@ -540,79 +491,67 @@ def chloroethane_ethane_ghostly_modifications():
         },
     }
 
+@pytest.fixture()
+def toluene_pyridine_ghostly_modifications():
+    return {
+    "lambda_0": {
+        "removed_angles": set(),
+        "removed_dihedrals": set(),
+        "stiffened_angles": set(),
+        "softened_angles": {}
+    },
+    "lambda_1": {
+        "removed_angles": set(),
+        "removed_dihedrals": {
+            (0,1,2,10),
+            (6,1,0,7),
+            (6,1,0,8),
+            (0,1,6,5),
+            (6,1,0,9),
+            (0,1,6,14),
+            (0,6,2,1),
+            (0,1,2,3),
+            (1,6,0,2),
+            (1,0,2,6)
+        },
+        "stiffened_angles": {(0, 1, 2), (0, 1, 6)},
+        "softened_angles": {}
+    }
+}
+
 
 @pytest.fixture()
-def hsp90_11_to_12_ghostly_modifications():
+def propane_dimethylether_ghostly_modifications():
     return {
-        "lambda_0": {
-            "removed_angles": [(12, 19, 33)],
-            "removed_dihedrals": [
-                (12, 19, 33, 36),
-                (12, 19, 33, 34),
-                (12, 19, 33, 35),
-                (9, 12, 19, 33),
-                (14, 12, 19, 33),
-            ],
-            "stiffened_angles": [(18, 19, 33)],
-            "softened_angles": {},
+    "lambda_0": {
+        "removed_angles": set(),
+        "removed_dihedrals": set(),
+        "stiffened_angles": set(),
+        "softened_angles": {}
+    },
+    "lambda_1": {
+        "removed_angles": {(9, 0, 10)},
+        "removed_dihedrals": {
+            (8,5,0,9),
+            (2,1,0,9),
+            (6,5,0,9),
+            (3,1,0,9),
+            (7,5,0,9),
+            (4,1,0,9),
+            (6,5,0,10),
+            (7,5,0,10),
+            (8,5,0,10),
+            (2,1,0,10),
+            (3,1,0,10),
+            (4,1,0,10)
         },
-        "lambda_1": {
-            "removed_angles": [(12, 19, 32)],
-            "removed_dihedrals": [(9, 12, 19, 32), (14, 12, 19, 32)],
-            "stiffened_angles": [(18, 19, 32)],
-            "softened_angles": {},
-        },
+        "stiffened_angles": {(1, 0, 9), (5, 0, 9), (1, 0, 10), (5, 0, 10)},
+        "softened_angles": {}
     }
+}
 
 
-@pytest.fixture()
-def htf_hsp90_11_to_12(
-    hsp90_11,
-    hsp90_12,
-    hsp90_11_to_12_mapping,
-):
-    """Generate the htf for HSP90 ligand 11 to ligand 12."""
-    settings = RelativeHybridTopologyProtocol.default_settings()
-    # make sure we interpolate the 1-4 exceptions involving dummy atoms if present
-    settings.alchemical_settings.turn_off_core_unique_exceptions = True
-    small_ff = settings.forcefield_settings.small_molecule_forcefield
-    if ".offxml" not in small_ff:
-        small_ff += ".offxml"
-    ff = ForceField(small_ff)
-    hsp90_11_openff = hsp90_11.to_openff()
-    hsp90_11_charges = hsp90_11_openff.partial_charges.m_as(offunit.elementary_charge)
-    hsp90_11_labels = ff.label_molecules(hsp90_11_openff.to_topology())[0]
-    hsp90_12_openff = hsp90_12.to_openff()
-    hsp90_12_charges = hsp90_12_openff.partial_charges.m_as(offunit.elementary_charge)
-    hsp90_12_labels = ff.label_molecules(hsp90_12_openff.to_topology())[0]
-    htf = make_htf(
-        mapping=hsp90_11_to_12_mapping,
-        settings=settings,
-    )
-    hybrid_system = htf.hybrid_system
-
-    apply_box_vectors_and_fix_nn_force(hybrid_topology_factory=htf, force_field=ff)
-
-    forces = {force.getName(): force for force in hybrid_system.getForces()}
-
-    return {
-        "htf": htf,
-        "hybrid_system": hybrid_system,
-        "forces": forces,
-        "hsp90_11_labels": hsp90_11_labels,
-        "hsp90_12_labels": hsp90_12_labels,
-        "mapping": hsp90_11_to_12_mapping,
-        "hsp90_11": hsp90_11,
-        "hsp90_12": hsp90_12,
-        "hsp90_11_charges": hsp90_11_charges,
-        "hsp90_12_charges": hsp90_12_charges,
-        "electrostatic_scale": ff.get_parameter_handler("Electrostatics").scale14,
-        "vdW_scale": ff.get_parameter_handler("vdW").scale14,
-        "force_field": ff,
-    }
-
-
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def htf_toluene_pyridine(toluene, pyridine, toluene_to_pyridine_mapping):
     """Generate the htf for toluene to pyridine."""
     settings = RelativeHybridTopologyProtocol.default_settings()
@@ -648,7 +587,7 @@ def htf_toluene_pyridine(toluene, pyridine, toluene_to_pyridine_mapping):
         "force_field": ff
     }
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def htf_propane_dimethyl_ether(propane, dimethyl_ether, propane_to_dimethyl_ether_mapping):
     """Generate the htf for propane to dimethyl ether."""
     settings = RelativeHybridTopologyProtocol.default_settings()
@@ -684,7 +623,7 @@ def htf_propane_dimethyl_ether(propane, dimethyl_ether, propane_to_dimethyl_ethe
         "force_field": ff
     }
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def htf_propane_chloroethane(propane, chloroethane, propane_to_chloroethane):
     """Generate the htf for propane to chloroethane."""
     settings = RelativeHybridTopologyProtocol.default_settings()
