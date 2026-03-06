@@ -493,7 +493,7 @@ def _derive_dual_corrections(junction: dict[str, set[int]], rdkit_mol, force_fie
     -----
     - In the case of a dual junction with two dummy groups we do not remove any valence terms between them as we use the
         single bond-angle-dihedral method to avoid the groups overlapping.
-    - If the physical junction atom is planer we stiffen the dihedral we retain to prevent the junction flapping, we use a k value
+    - If the physical junction atom is planar we stiffen the dihedral we retain to prevent the junction flapping, we use a k value
         of 100 kcal/mol a periodicity of 1 and a phase of PI to se the equilibrium value to 0.
     """
     # find all dihedrals which involve a dummy atom and the physical junction atom
@@ -527,12 +527,12 @@ def _derive_dual_corrections(junction: dict[str, set[int]], rdkit_mol, force_fie
         dihedrals=dummy_junction_dihedrals, excluded_atoms=excluded_atoms, rdkit_mol=rdkit_mol
     )
 
-    # we need to check if the junction is planer and if we need to stiffen the dihedral
+    # we need to check if the junction is planar and if we need to stiffen the dihedral
     junction_hybridisation = rdkit_mol.GetAtomWithIdx(junction_atom).GetHybridization()
     if junction_hybridisation == Chem.HybridizationType.SP2:
-        junction_is_planer = True
+        junction_is_planar = True
     else:
-        junction_is_planer = False
+        junction_is_planar = False
 
     # remove all dihedrals which do not terminate in the heaviest terminal atom
     for dihedral in dummy_junction_dihedrals:
@@ -540,7 +540,7 @@ def _derive_dual_corrections(junction: dict[str, set[int]], rdkit_mol, force_fie
             corrections["removed_dihedrals"].add(frozenset(dihedral))
         # we need to stiffen the dihedral if we want to keep the dummy group in plan with the rest of the molecule
         # or if we have to anchor using a free rotor
-        elif heaviest_terminal_atom in dihedral and (heaviest_terminal_atom in rotor_atoms or junction_is_planer):
+        elif heaviest_terminal_atom in dihedral and (heaviest_terminal_atom in rotor_atoms or junction_is_planar):
             corrections["stiffened_dihedrals"].add(frozenset(dihedral))
 
     # find the physical atom the kept dihedrals pass through
@@ -578,7 +578,7 @@ def _derive_triple_corrections(junction: dict[str, set[int]], rdkit_mol, force_f
 
     Notes
     -----
-    - Non-planer triple junctions can not be fully separated, so we just soften all angles and remove dihedrals terminating in the
+    - Non-planar triple junctions can not be fully separated, so we just soften all angles and remove dihedrals terminating in the
         dummy junction atom originating from the physical system.
     - Non-planar triple junctions with large dummy groups will have dihedrals removed to avoid single and dual anchor dihedral constraints.
     """
@@ -592,10 +592,10 @@ def _derive_triple_corrections(junction: dict[str, set[int]], rdkit_mol, force_f
     junction_hybridisation = rdkit_mol.GetAtomWithIdx(junction_atom).GetHybridization()
 
     if junction_hybridisation == Chem.HybridizationType.SP2:
-        print("Junction is planer, applying planer junction corrections.")
+        print("Junction is planar, applying planar junction corrections.")
         raise NotImplementedError("Planar triple junctions not supported")
     else:
-        print("Junction is non-planer, applying non-planer junction corrections.")
+        print("Junction is non-planar, applying non-planar junction corrections.")
         # first we need to find the three angles to soften
         for angle in force_field_labels["Angles"].keys():
             junction_in_angle = junction_atom in angle

@@ -15,7 +15,7 @@ from pathlib import Path
 import logging
 from rdkit import Chem
 from rdkit.Chem import rdMolAlign
-from gufe import SmallMoleculeComponent, LigandNetwork
+from gufe import SmallMoleculeComponent, LigandNetwork, LigandAtomMapping
 from openfe.setup.ligand_network_planning import generate_lomap_network
 from openfe.setup import KartografAtomMapper
 from openfe.setup.atom_mapping.lomap_scorers import default_lomap_score
@@ -41,10 +41,57 @@ from collections import defaultdict
 from yammbs.analysis import get_internal_coordinate_rmsds
 import matplotlib.pyplot as plt
 import seaborn as sns
+from kartograf import KartografAtomMapper
+from openff.toolkit import ForceField
 
 sns.set_context("talk")
 
 amber_rdkit = ToolkitRegistry([RDKitToolkitWrapper(), AmberToolsToolkitWrapper()])
+FORCE_FIELD = "openff-2.2.0.offxml"
+
+def remap_edge(edge: LigandAtomMapping) -> LigandAtomMapping:
+    """We need to remap and fix the edge mapping to include constraint length changes"""
+    mapper = KartografAtomMapper(map_hydrogens_on_hydrogens_only=True)
+    new_mapping = next(mapper.suggest_mappings(edge.componentA, edge.componentB))
+    ligand_a_off = edge.componentA.to_openff()
+    ligand_b_off = edge.componentB.to_openff()
+    # get the bond labels
+    ff = ForceField(FORCE_FIELD)
+    ligand_a_bonds = ff.label_molecules(ligand_a_off.to_topology())[0]["Bonds"]
+    ligand_b_bonds = ff.label_molecules(ligand_b_off.to_topology())[0]["Bonds"]
+    # track which atoms to remove from the mapping
+    to_remove = []
+    atom_mapping = new_mapping.componentA_to_componentB
+    # loop over the bonds if they are fully mapped check the lengths
+    for bond in ligand_a_off.bonds:
+        atom_1 = bond.atom1_index
+        atom_2 = bond.atom2_index
+        if atom_1 in atom_mapping and atom_2 in atom_mapping:
+            # check if one atom is a hydrogen
+            if bond.atom1.atomic_number == 1 or bond.atom2.atomic_number == 1:
+                # this is a h-bond so check the length
+                ligand_a_length = ligand_a_bonds[(atom_1, atom_2)].length.m
+                ligand_b_length = ligand_b_bonds[(atom_mapping[atom_1], atom_mapping[atom_2])].length.m
+                if ligand_a_length != ligand_b_length:
+                    # we have a constraint length change so remove this mapping
+                    # workout which is the h and remove
+                    if bond.atom1.atomic_number == 1:
+                        to_remove.append(atom_1)
+                        print(
+                            f"Found a H constraint length change removing from mapping {atom_1}-{atom_mapping[atom_1]}")
+                    else:
+                        to_remove.append(atom_2)
+                        print(
+                            f"Found a H constraint length change removing from mapping {atom_2}-{atom_mapping[atom_2]}")
+    # create a new mapping without the removed atoms
+    for idx in to_remove:
+        atom_mapping.pop(idx)
+    new_mapping = LigandAtomMapping(
+        componentA=new_mapping.componentA,
+        componentB=new_mapping.componentB,
+        componentA_to_componentB=atom_mapping,
+    )
+    return  new_mapping
 
 
 def internal_coord_plot(df, filename):
@@ -279,6 +326,8 @@ def main(ligands: Path, output: Path, network: None | Path, scale_factor: float,
     # Minimise each hybrid edge topologies
     hybrid_endstate_data = defaultdict(list)
     for edge in tqdm.tqdm(ligand_network.edges, desc="Minimising hybrid end-states"):
+        # remap the edge to make sure we take into account any constraint length changes
+        edge = remap_edge(edge)
         corrections = None
         if internal_corrections:
             logger.info("Deriving internal valence corrections for dummy-core junctions")
