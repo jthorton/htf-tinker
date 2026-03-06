@@ -88,7 +88,12 @@ class HybridTopologyFactory:
                  softcore_alpha=0.5,
                  softcore_LJ_v2=True,
                  softcore_LJ_v2_alpha=0.85,
-                 interpolate_old_and_new_14s=False):
+                 interpolate_old_and_new_14s=False,
+                 valence_correction_terms=None,
+                 # default values for the correction terms in openmm units
+                 stiffened_k_correction = 100 * unit.kilocalories_per_mole,
+                 softened_k_correction = 5 * unit.kilocalories_per_mole,
+                 ):
         """
         Initialize the Hybrid topology factory.
 
@@ -126,6 +131,13 @@ class HybridTopologyFactory:
             Whether to turn off interactions for new exceptions (not just
             1,4s) at lambda = 0 and old exceptions at lambda = 1; if False,
             they are present in the nonbonded force.
+        valence_correction_terms : optional dict, default None
+            A dictionary of valence correction terms to incorporate while building the hybrid system. They should use
+            "lambda_0/lambda_1" to specify the end state they should be applied to and use the indexing of the old/new systems.
+        stiffened_k_correction : unit.Quantity, default 100 kcal/mol
+            The value used to stiffen any force constants in the valence correction terms.
+        softened_k_correction : unit.Quantity, default 5 kcal/mol
+            The value used to soften any force constants in the valence correction terms.
         """
 
         # Assign system positions and force
@@ -137,6 +149,9 @@ class HybridTopologyFactory:
         self._new_positions = new_positions
         self._new_topology = new_topology
         self._hybrid_system_forces = dict()
+        self._valence_corrections_terms = valence_correction_terms
+        self._stiffened_k_correction = stiffened_k_correction
+        self._softened_k_correction = softened_k_correction
 
         # Set mappings (full, core, and env maps)
         self._set_mappings(old_to_new_atom_map, old_to_new_core_atom_map)
@@ -1365,7 +1380,7 @@ class HybridTopologyFactory:
 
         Notes
         -----
-        * Removed softening and neglected angle functionality
+        * If we have valence term corrections they overwrite the above rules.
         """
         old_system_angle_force = self._old_system_forces['HarmonicAngleForce']
         new_system_angle_force = self._new_system_forces['HarmonicAngleForce']
@@ -1374,6 +1389,7 @@ class HybridTopologyFactory:
         # what to do with them. We will only use the
         # custom angle force if all atoms are part of "core." Otherwise, they
         # are either unique to one system or never change.
+        valence_corrections = self._valence_corrections_terms["lambda_1"] if self._valence_corrections_terms is not None else None
         for angle_index in range(old_system_angle_force.getNumAngles()):
 
             old_angle_parameters = old_system_angle_force.getAngleParameters(
@@ -1384,6 +1400,22 @@ class HybridTopologyFactory:
                 self._old_to_hybrid_map[old_atomid] for old_atomid in old_angle_parameters[:3]
             ]
             hybrid_index_set = set(hybrid_index_list)
+
+            # first check if we are apply valence corrections to this term
+            if valence_corrections is not None:
+                old_angle = frozenset(old_angle_parameters[:3])
+                removed = old_angle in valence_corrections['removed_angles']
+                softened = old_angle in valence_corrections['softened_angles']
+                if removed or softened:
+                    new_k = (0.0 * unit.kilojoule_per_mole / unit.radian ** 2) if removed else self._softened_k_correction / unit.radian ** 2
+
+                    self._hybrid_system_forces['core_angle_force'].addAngle(
+                        hybrid_index_list[0], hybrid_index_list[1],
+                        hybrid_index_list[2], [old_angle_parameters[3], old_angle_parameters[4], old_angle_parameters[3], new_k]
+                    )
+                    print(f"Applied valence correction to angle: {hybrid_index_set} new k term: {new_k}")
+                    continue  # skip the rest of the logic for this angle since we've already added it
+
 
             # If all atoms are in the core, we'll need to find the
             # corresponding parameters in the old system and interpolate
@@ -1458,6 +1490,7 @@ class HybridTopologyFactory:
 
         # Finally, loop through the new system force to add any unique new
         # angles
+        valence_corrections = self._valence_corrections_terms["lambda_0"] if self._valence_corrections_terms is not None else None
         for angle_index in range(new_system_angle_force.getNumAngles()):
 
             new_angle_parameters = new_system_angle_force.getAngleParameters(
@@ -1468,6 +1501,22 @@ class HybridTopologyFactory:
                 self._new_to_hybrid_map[new_atomid] for new_atomid in new_angle_parameters[:3]
             ]
             hybrid_index_set = set(hybrid_index_list)
+
+            # first check if we are apply valence corrections to this term
+            if valence_corrections is not None:
+                new_angle = frozenset(new_angle_parameters[:3])
+                removed = new_angle in valence_corrections['removed_angles']
+                softened = new_angle in valence_corrections['softened_angles']
+                if removed or softened:
+                    old_k = (0.0 * unit.kilojoule_per_mole / unit.radian ** 2) if removed else self._softened_k_correction * unit.radian ** 2
+                    # in this case the term should be removed/softened at lambda = 0
+                    self._hybrid_system_forces['core_angle_force'].addAngle(
+                        hybrid_index_list[0], hybrid_index_list[1],
+                        hybrid_index_list[2],
+                        [new_angle_parameters[3], old_k, new_angle_parameters[3], new_angle_parameters[4]]
+                    )
+                    print(f"Applied valence correction to angle: {hybrid_index_set} old k term: {old_k}")
+                    continue  # skip the rest of the logic for this angle since we've already added it
 
             # If the intersection of this hybrid set with the unique new atoms
             # is nonempty, it must be added:
@@ -1565,7 +1614,7 @@ class HybridTopologyFactory:
 
         Notes
         -----
-        * Torsion flattening logic has been removed for now.
+        * If we have valence correction terms they overwrite the above rules.
         """
         old_system_torsion_force = self._old_system_forces['PeriodicTorsionForce']
         new_system_torsion_force = self._new_system_forces['PeriodicTorsionForce']
@@ -1573,11 +1622,22 @@ class HybridTopologyFactory:
         auxiliary_custom_torsion_force = []
         old_custom_torsions_to_standard = []
 
+        # define some values for the valence term corrections
+        removed_k = 0.0 * unit.kilocalories_per_mole
+        stiffened_k = 100.0 * unit.kilocalories_per_mole
+        # define the values to set the minimum of the potential to 0 degrees with a single minima
+        stiffened_periodicity = 1
+        stiffened_phase = 180 * unit.degree
+
         # We need to keep track of what torsions we added so that we do not
         # double count
         # added_torsions = []
         # TODO: Commented out since this actually isn't being done anywhere?
         #       Is it necessary? Should we add this logic back in?
+        valence_corrections = self._valence_corrections_terms["lambda_1"] if self._valence_corrections_terms is not None else None
+        # torsions can be defined multiple times for each unique combination of periodicity and phase
+        # and we want to stiffen a single value so track when we do this to avoid double counting
+        stiffened_torsions = set()
         for torsion_index in range(old_system_torsion_force.getNumTorsions()):
 
             torsion_parameters = old_system_torsion_force.getTorsionParameters(
@@ -1588,6 +1648,35 @@ class HybridTopologyFactory:
                 self._old_to_hybrid_map[old_index] for old_index in torsion_parameters[:4]
             ]
             hybrid_index_set = set(hybrid_index_list)
+
+            # first check if we are apply valence corrections to this term
+            if valence_corrections is not None:
+                old_torsion = frozenset(torsion_parameters[:4])
+                removed = old_torsion in valence_corrections['removed_dihedrals'] or old_torsion in valence_corrections["removed_impropers"]
+                stiffened = old_torsion in valence_corrections['stiffened_dihedrals']
+                # if the term should be removed or stiffened we interpolated it off
+                # if stiffened another term will be added which is interpolated on from 0 to the stiffened force value
+                if removed or stiffened:
+                    # in this case the term should be removed at lambda = 1
+                    self._hybrid_system_forces['custom_torsion_force'].addTorsion(
+                        hybrid_index_list[0], hybrid_index_list[1],
+                        hybrid_index_list[2], hybrid_index_list[3],
+                        [torsion_parameters[4], torsion_parameters[5], torsion_parameters[6], torsion_parameters[4], torsion_parameters[5], removed_k]
+                    )
+                    print(f"Applied valence correction to torsion: {hybrid_index_set} new k term: {removed_k}")
+
+                    # as torsions can be present multiple times we only add a single stiffened term for each unique torsion
+                    if stiffened and old_torsion not in stiffened_torsions:
+                        self._hybrid_system_forces['custom_torsion_force'].addTorsion(
+                            hybrid_index_list[0], hybrid_index_list[1],
+                            hybrid_index_list[2], hybrid_index_list[3],
+                            [stiffened_periodicity, stiffened_phase, removed_k, stiffened_periodicity, stiffened_phase, stiffened_k]
+                        )
+                        print(f"Applied valence stiffening correction to torsion: {hybrid_index_set} new k term: {stiffened_k}")
+                        stiffened_torsions.add(old_torsion)
+                    continue  # skip the rest of the logic for this torsion since we've already added it
+
+
 
             # If all atoms are in the core, we'll need to find the
             # corresponding parameters in the old system and interpolate
@@ -1613,6 +1702,11 @@ class HybridTopologyFactory:
                      hybrid_force_parameters[:3]]
                 )
 
+        # get the corrections for the new system these should be applied at lmabda_0
+        valence_corrections = self._valence_corrections_terms["lambda_0"] if self._valence_corrections_terms is not None else None
+        # torsions can be defined multiple times for each unique combination of periodicity and phase
+        # and we want to stiffen a single value so track when we do this to avoid double counting
+        stiffened_torsions = set()
         for torsion_index in range(new_system_torsion_force.getNumTorsions()):
             torsion_parameters = new_system_torsion_force.getTorsionParameters(torsion_index)
 
@@ -1620,6 +1714,37 @@ class HybridTopologyFactory:
             hybrid_index_list = [
                 self._new_to_hybrid_map[new_index] for new_index in torsion_parameters[:4]]
             hybrid_index_set = set(hybrid_index_list)
+
+            # first check if we are apply valence corrections to this term
+            if valence_corrections is not None:
+                new_torsion = frozenset(torsion_parameters[:4])
+                removed = new_torsion in valence_corrections['removed_dihedrals'] or new_torsion in valence_corrections["removed_impropers"]
+                stiffened = new_torsion in valence_corrections['stiffened_dihedrals']
+                # if the term should be removed or stiffened we interpolated it off
+                # if stiffened another term will be added which is interpolated on from 0 to the stiffened force value
+                if removed or stiffened:
+                    # in this case the term should be removed at lambda = 0
+                    self._hybrid_system_forces['custom_torsion_force'].addTorsion(
+                        hybrid_index_list[0], hybrid_index_list[1],
+                        hybrid_index_list[2], hybrid_index_list[3],
+                        [torsion_parameters[4], torsion_parameters[5], removed_k, torsion_parameters[4],
+                         torsion_parameters[5], torsion_parameters[6]]
+                    )
+                    print(f"Applied valence correction to torsion: {hybrid_index_set} old k term: {removed_k}")
+
+                    # as torsions can be present multiple times we only add a single stiffened term for each unique torsion
+                    if stiffened and new_torsion not in stiffened_torsions:
+                        # in this case the term should be stiffened at lambda = 0 and off at lambda = 1
+                        self._hybrid_system_forces['custom_torsion_force'].addTorsion(
+                            hybrid_index_list[0], hybrid_index_list[1],
+                            hybrid_index_list[2], hybrid_index_list[3],
+                            [stiffened_periodicity, stiffened_phase, stiffened_k, stiffened_periodicity, stiffened_phase,
+                             removed_k]
+                        )
+                        print(
+                            f"Applied valence stiffening correction to torsion: {hybrid_index_set} old k term: {stiffened_k}")
+                        stiffened_torsions.add(new_torsion)
+                    continue  # skip the rest of the logic for this torsion since we've already added it
 
             if hybrid_index_set.intersection(self._atom_classes['unique_new_atoms']):
                 # Then it goes to the custom torsion force (scaled to zero)

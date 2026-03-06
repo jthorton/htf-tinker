@@ -16,11 +16,13 @@ def chloroethane():
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "chloroethane.sdf")
 
+
 @pytest.fixture(scope="module")
 def fluoroethane():
     """Load fluoroethane with partial charges from sdf file."""
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "fluoroethane.sdf")
+
 
 @pytest.fixture(scope="module")
 def ethane():
@@ -28,11 +30,13 @@ def ethane():
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "ethane.sdf")
 
+
 @pytest.fixture(scope="module")
 def chlorobenzene():
     """Load chlorobenzene with partial charges from sdf file."""
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "t4_lysozyme_data" / "chlorobenzene.sdf")
+
 
 @pytest.fixture(scope="module")
 def fluorobenzene():
@@ -40,11 +44,13 @@ def fluorobenzene():
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "t4_lysozyme_data" / "fluorobenzene.sdf")
 
+
 @pytest.fixture(scope="module")
 def benzene():
     """Load benzene with partial charges from sdf file."""
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "t4_lysozyme_data" / "benzene.sdf")
+
 
 @pytest.fixture(scope="module")
 def toluene():
@@ -52,11 +58,13 @@ def toluene():
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "toluene.sdf")
 
+
 @pytest.fixture(scope="module")
 def pyridine():
     """Load pyridine with partial charges from sdf file."""
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "pyridine.sdf")
+
 
 @pytest.fixture(scope="module")
 def propane():
@@ -64,11 +72,37 @@ def propane():
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "propane.sdf")
 
+
 @pytest.fixture(scope="module")
 def dimethyl_ether():
     """Load dimethyl ether with partial charges from sdf file."""
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "dimethyl_ether.sdf")
+
+
+@pytest.fixture(scope="module")
+def tyk2_ejm_50():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "tyk2_ejm_50.sdf")
+
+
+@pytest.fixture(scope="module")
+def tyk2_ejm_55():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "tyk2_ejm_55.sdf")
+
+
+@pytest.fixture(scope="module")
+def tyk2_ejm_31():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "tyk2_ejm_31.sdf")
+
+
+@pytest.fixture(scope="module")
+def tyk2_ejm_42():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "tyk2_ejm_42.sdf")
+
 
 @pytest.fixture(scope="module")
 def chloroethane_to_fluoroethane_mapping(chloroethane, fluoroethane):
@@ -153,6 +187,25 @@ def propane_to_chloroethane(propane, chloroethane):
             2: 5, 3: 6, 4: 7, 9: 4, 10: 3, 0: 1, 1: 2, 5: 0
         }
     )
+
+@pytest.fixture(scope="module")
+def ejm_50_to_ejm_55_mapping(tyk2_ejm_50, tyk2_ejm_55):
+    """Return a mapping from tyk2_ejm_50 to tyk2_ejm_55."""
+    return LigandAtomMapping(
+        componentA=tyk2_ejm_50,
+        componentB=tyk2_ejm_55,
+        componentA_to_componentB={21: 20, 22: 21, 23: 22, 24: 23, 25: 24, 26: 25, 27: 26, 28: 27, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17, 18: 18, 19: 28, 20: 19, 31: 29})
+
+
+@pytest.fixture(scope="module")
+def ejm_31_to_ejm_42_mapping(tyk2_ejm_31, tyk2_ejm_42):
+    """Return a mapping from tyk2_ejm_31 to tyk2_ejm_42."""
+    return LigandAtomMapping(
+        componentA=tyk2_ejm_31,
+        componentB=tyk2_ejm_42,
+        componentA_to_componentB={21: 21, 22: 22, 23: 23, 24: 24, 25: 25, 26: 26, 27: 27, 28: 28, 29: 29, 31: 30, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17, 18: 18, 19: 19, 20: 20}
+    )
+
 
 @pytest.fixture(scope="module")
 def t4_lysozyme_solvated():
@@ -453,6 +506,42 @@ def htf_propane_chloroethane(propane, chloroethane, propane_to_chloroethane):
         "chloroethane": chloroethane,
         "propane_charges": propane_charges,
         "chloro_charges": chloro_charges,
+        "electrostatic_scale": ff.get_parameter_handler("Electrostatics").scale14,
+        "vdW_scale": ff.get_parameter_handler("vdW").scale14,
+        "force_field": ff
+    }
+
+@pytest.fixture(scope="module")
+def htf_ejm_50_to_ejm_55(tyk2_ejm_50, tyk2_ejm_55, ejm_50_to_ejm_55_mapping):
+    """Generate the htf for tyk2_ejm_50 to tyk2_ejm_55."""
+    settings = RelativeHybridTopologyProtocol.default_settings()
+    # make sure we interpolate the 1-4 exceptions involving dummy atoms if present
+    settings.alchemical_settings.turn_off_core_unique_exceptions = True
+    small_ff = settings.forcefield_settings.small_molecule_forcefield
+    if ".offxml" not in small_ff:
+        small_ff += ".offxml"
+    ff = ForceField(small_ff)
+    ejm_50_openff = tyk2_ejm_50.to_openff()
+    ejm_50_charges = ejm_50_openff.partial_charges.m_as(offunit.elementary_charge)
+    ejm_50_labels = ff.label_molecules(ejm_50_openff.to_topology())[0]
+    ejm_55_openff = tyk2_ejm_55.to_openff()
+    ejm_55_charges = ejm_55_openff.partial_charges.m_as(offunit.elementary_charge)
+    ejm_55_labels = ff.label_molecules(ejm_55_openff.to_topology())[0]
+    htf = make_htf(mapping=ejm_50_to_ejm_55_mapping, settings=settings)
+    hybrid_system = htf.hybrid_system
+    forces = {force.getName(): force for force in hybrid_system.getForces()}
+
+    return {
+        "htf": htf,
+        "hybrid_system": hybrid_system,
+        "forces": forces,
+        "ejm_50_labels": ejm_50_labels,
+        "ejm_55_labels": ejm_55_labels,
+        "mapping": ejm_50_to_ejm_55_mapping,
+        "ejm_50": tyk2_ejm_50,
+        "ejm_55": tyk2_ejm_55,
+        "ejm_50_charges": ejm_50_charges,
+        "ejm_55_charges": ejm_55_charges,
         "electrostatic_scale": ff.get_parameter_handler("Electrostatics").scale14,
         "vdW_scale": ff.get_parameter_handler("vdW").scale14,
         "force_field": ff

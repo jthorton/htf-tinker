@@ -8,14 +8,14 @@ Workflow steps:
 4. Collect the positions of the minimised ligands and write them to an output SDF file.
 5. Calculate the RMSD of the hybrid end states to the pure end states and calculate the relative energy difference using the pure topologies and save to CSV for analysis.
 """
-from htf.utils import _scale_angles_and_torsions
+from htf.utils import _scale_angles_and_torsions, _derive_dummy_junction_corrections
+from htf.relative import HybridTopologyFactory as HTF
 import click
 from pathlib import Path
 import logging
 from rdkit import Chem
 from rdkit.Chem import rdMolAlign
 from gufe import SmallMoleculeComponent, LigandNetwork
-from openfe.protocols.openmm_rfe._rfe_utils.relative import HybridTopologyFactory
 from openfe.setup.ligand_network_planning import generate_lomap_network
 from openfe.setup import KartografAtomMapper
 from openfe.setup.atom_mapping.lomap_scorers import default_lomap_score
@@ -105,7 +105,7 @@ def gen_charges(smc):
     return SmallMoleculeComponent.from_openff(offmol)
 
 
-def make_hybrid_factory(edge, system_generator):
+def make_hybrid_factory(edge, system_generator, corrections=None):
     small_mols = [edge.componentA, edge.componentB]
     off_small_mols = {
         'stateA': [(edge.componentA, edge.componentA.to_openff())],
@@ -174,13 +174,14 @@ def make_hybrid_factory(edge, system_generator):
     )
     # 3. Create the hybrid topology
     # b. Get hybrid topology factory
-    hybrid_factory = _rfe_utils.relative.HybridTopologyFactory(
+    hybrid_factory = HTF(
         stateA_system, stateA_positions, stateA_topology,
         stateB_system, stateB_positions, stateB_topology,
         old_to_new_atom_map=ligand_mappings['old_to_new_atom_map'],
         old_to_new_core_atom_map=ligand_mappings['old_to_new_core_atom_map'],
         softcore_LJ_v2=True,
         interpolate_old_and_new_14s=True,
+        valence_correction_terms=corrections
     )
     return hybrid_factory
 
@@ -223,7 +224,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
     is_flag=True,
     default=True,
 )
-def main(ligands: Path, output: Path, network: None | Path, scale_factor: float, scale_angles: bool):
+@click.option("--internal-corrections/--no-internal-corrections", help="Whether to apply internal valence corrections at dummy-core junctions.", is_flag=True, default=False)
+def main(ligands: Path, output: Path, network: None | Path, scale_factor: float, scale_angles: bool, internal_corrections: bool):
     """
     Command line interface for running a minimisation workflow.
     This can be configured using a YAML file.
@@ -277,7 +279,11 @@ def main(ligands: Path, output: Path, network: None | Path, scale_factor: float,
     # Minimise each hybrid edge topologies
     hybrid_endstate_data = defaultdict(list)
     for edge in tqdm.tqdm(ligand_network.edges, desc="Minimising hybrid end-states"):
-        htf = make_hybrid_factory(edge, system_generator)
+        corrections = None
+        if internal_corrections:
+            logger.info("Deriving internal valence corrections for dummy-core junctions")
+            corrections = _derive_dummy_junction_corrections(edge, "openff-2.2.0.offxml")
+        htf = make_hybrid_factory(edge, system_generator, corrections)
         if scale_factor != 1.0:
             # build the new scaled htf
             logger.info(f"Scaling dummy-core junction force constants by {scale_factor}, scale_angles={scale_angles}")
