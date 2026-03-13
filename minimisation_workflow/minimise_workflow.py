@@ -169,15 +169,15 @@ def make_hybrid_factory(edge, system_generator, corrections=None):
         system_generator.create_system(mol.to_topology().to_openmm(),
                                        molecules=[mol])
 
-        # c. get OpenMM Modeller + a dictionary of resids for each component
-        stateA_modeller, comp_resids = system_creation.get_omm_modeller(
-            protein_comp=None,
-            solvent_comp=None,
-            small_mols=dict(chain(off_small_mols['stateA'],
-                                  off_small_mols['both'])),
-            omm_forcefield=None,
-            solvent_settings=None,
-        )
+    # c. get OpenMM Modeller + a dictionary of resids for each component
+    stateA_modeller, comp_resids = system_creation.get_omm_modeller(
+        protein_comp=None,
+        solvent_comp=None,
+        small_mols=dict(chain(off_small_mols['stateA'],
+                              off_small_mols['both'])),
+        omm_forcefield=None,
+        solvent_settings=None,
+    )
 
     stateA_topology = stateA_modeller.getTopology()
     stateA_positions = to_openmm(

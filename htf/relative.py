@@ -1413,7 +1413,7 @@ class HybridTopologyFactory:
                         hybrid_index_list[0], hybrid_index_list[1],
                         hybrid_index_list[2], [old_angle_parameters[3], old_angle_parameters[4], old_angle_parameters[3], new_k]
                     )
-                    print(f"Applied valence correction to angle: {hybrid_index_set} new k term: {new_k}")
+                    print(f"Applied valence correction to angle: {hybrid_index_list} new k term: {new_k}")
                     continue  # skip the rest of the logic for this angle since we've already added it
 
 
@@ -1515,7 +1515,7 @@ class HybridTopologyFactory:
                         hybrid_index_list[2],
                         [new_angle_parameters[3], old_k, new_angle_parameters[3], new_angle_parameters[4]]
                     )
-                    print(f"Applied valence correction to angle: {hybrid_index_set} old k term: {old_k}")
+                    print(f"Applied valence correction to angle: {hybrid_index_list} old k term: {old_k}")
                     continue  # skip the rest of the logic for this angle since we've already added it
 
             # If the intersection of this hybrid set with the unique new atoms
@@ -1625,9 +1625,9 @@ class HybridTopologyFactory:
         # define some values for the valence term corrections
         removed_k = 0.0 * unit.kilocalories_per_mole
         stiffened_k = 100.0 * unit.kilocalories_per_mole
-        # define the values to set the minimum of the potential to 0 degrees with a single minima
+        # define the values to set the minimum of the potential to 180 degrees with a single minima
         stiffened_periodicity = 1
-        stiffened_phase = 180 * unit.degree
+        stiffened_phase = 0.0 * unit.degree
 
         # We need to keep track of what torsions we added so that we do not
         # double count
@@ -1663,7 +1663,7 @@ class HybridTopologyFactory:
                         hybrid_index_list[2], hybrid_index_list[3],
                         [torsion_parameters[4], torsion_parameters[5], torsion_parameters[6], torsion_parameters[4], torsion_parameters[5], removed_k]
                     )
-                    print(f"Applied valence correction to torsion: {hybrid_index_set} new k term: {removed_k}")
+                    print(f"Applied valence correction to torsion: {hybrid_index_list} new k term: {removed_k}")
 
                     # as torsions can be present multiple times we only add a single stiffened term for each unique torsion
                     if stiffened and old_torsion not in stiffened_torsions:
@@ -1672,7 +1672,7 @@ class HybridTopologyFactory:
                             hybrid_index_list[2], hybrid_index_list[3],
                             [stiffened_periodicity, stiffened_phase, removed_k, stiffened_periodicity, stiffened_phase, stiffened_k]
                         )
-                        print(f"Applied valence stiffening correction to torsion: {hybrid_index_set} new k term: {stiffened_k}")
+                        print(f"Applied valence stiffening correction to torsion: {hybrid_index_list} new k term: {stiffened_k}")
                         stiffened_torsions.add(old_torsion)
                     continue  # skip the rest of the logic for this torsion since we've already added it
 
@@ -1730,7 +1730,7 @@ class HybridTopologyFactory:
                         [torsion_parameters[4], torsion_parameters[5], removed_k, torsion_parameters[4],
                          torsion_parameters[5], torsion_parameters[6]]
                     )
-                    print(f"Applied valence correction to torsion: {hybrid_index_set} old k term: {removed_k}")
+                    print(f"Applied valence correction to torsion: {hybrid_index_list} old k term: {removed_k}")
 
                     # as torsions can be present multiple times we only add a single stiffened term for each unique torsion
                     if stiffened and new_torsion not in stiffened_torsions:
@@ -1742,7 +1742,7 @@ class HybridTopologyFactory:
                              removed_k]
                         )
                         print(
-                            f"Applied valence stiffening correction to torsion: {hybrid_index_set} old k term: {stiffened_k}")
+                            f"Applied valence stiffening correction to torsion: {hybrid_index_list} old k term: {stiffened_k}")
                         stiffened_torsions.add(new_torsion)
                     continue  # skip the rest of the logic for this torsion since we've already added it
 
