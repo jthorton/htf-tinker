@@ -335,39 +335,15 @@ def _derive_dummy_junction_corrections(mapping: LigandAtomMapping, force_field: 
             smc = mapping.componentA
             core_atoms = set(mapping.componentA_to_componentB.keys())
         print(f"Ligand at this state is: {smc} with core atoms {core_atoms}")
-        rdkit_mol = smc.to_rdkit()
+        rdkit_mol = smc.to_openff().to_rdkit()
+        rings = rdkit_mol.GetRingInfo().AtomRings()
+        print(f"Rings: {rings}")
         dummy_atoms = set([a.GetIdx() for a in rdkit_mol.GetAtoms() if a.GetIdx() not in core_atoms])
         ff_labels = ff.label_molecules(smc.to_openff().to_topology())[0]
         rotor_atoms = _find_free_rotors(rdkit_mol)
         print(f"Found rotor atoms: {rotor_atoms}")
-
-
-        # make a lookup for the bonds
-        bond_look_up = defaultdict(list)
-        for bond in rdkit_mol.GetBonds():
-            a1 = bond.GetBeginAtomIdx()
-            a2 = bond.GetEndAtomIdx()
-            bond_look_up[a1].append(a2)
-            bond_look_up[a2].append(a1)
-
-        # now find the dummy core junctions
-        assigned_dummies = set()
-        dummy_junctions = []
-        for dummy_atom in dummy_atoms:
-            if dummy_atom in assigned_dummies:
-                continue
-            bonded_physicals = [a for a in bond_look_up[dummy_atom] if a not in dummy_atoms]
-            # if there are no bonded physical atoms this is part of a larger dummy group so skip
-            if len(bonded_physicals) == 0:
-                continue
-            junction_atom = bonded_physicals[0]
-            other_dummies = [a for a in bond_look_up[junction_atom] if a in dummy_atoms and a != dummy_atom]
-            dummy_junctions.append({
-                "junction_atom": junction_atom,
-                "dummies": set([dummy_atom] + other_dummies),
-                "physical": set([a for a in bond_look_up[junction_atom] if a not in dummy_atoms]),
-            })
-            assigned_dummies.update([dummy_atom] + other_dummies)
+        # find the dummy junctions
+        dummy_junctions = _find_dummy_junctions_rdkit(rdkit_mol, dummy_atoms)
 
         # now derive the corrections for each junction
         for junction in dummy_junctions:
@@ -403,7 +379,13 @@ def _derive_dummy_junction_corrections(mapping: LigandAtomMapping, force_field: 
 
 
 def _find_dummy_junctions_rdkit(ligand: Chem.Mol, dummy_atoms: set[int]) -> list[dict[str, int | set[int]]]:
-    """Identify dummy-core junctions in the given molecule for the set of dummy atoms extracted from an atom mapping"""
+    """Identify dummy-core junctions in the given molecule for the set of dummy atoms extracted from an atom mapping
+
+    Notes
+    -----
+    Dummy junctions involving a physical and dummy atom in the same ring system are excluded as we can not correctly
+    handle ring openings.
+    """
     # make a lookup for the bonds
     bond_look_up = defaultdict(list)
     for bond in ligand.GetBonds():
@@ -411,6 +393,10 @@ def _find_dummy_junctions_rdkit(ligand: Chem.Mol, dummy_atoms: set[int]) -> list
         a2 = bond.GetEndAtomIdx()
         bond_look_up[a1].append(a2)
         bond_look_up[a2].append(a1)
+
+    # get the ring info
+    atom_rings = ligand.GetRingInfo().AtomRings()
+    print("Rings found",atom_rings)
 
     assigned_dummies = set()
     dummy_junctions = []
@@ -422,6 +408,16 @@ def _find_dummy_junctions_rdkit(ligand: Chem.Mol, dummy_atoms: set[int]) -> list
         if len(bonded_physicals) == 0:
             continue
         junction_atom = bonded_physicals[0]
+
+        # if the junction atom and the dummy atom are in the same ring skip this dummy atom
+        in_same_ring = False
+        for ring in atom_rings:
+            if junction_atom in ring and dummy_atom in ring:
+                in_same_ring = True
+                break
+        if in_same_ring:
+            continue
+
         other_dummies = [a for a in bond_look_up[junction_atom] if a in dummy_atoms and a != dummy_atom]
         dummy_junctions.append({
             "junction_atom": junction_atom,
@@ -456,7 +452,7 @@ def _find_free_rotors(rdkit_mold) -> set[int]:
             rotor_indices.update(terminal_atoms)
     return rotor_indices
 
-def _get_heaviest_terminal_atom(dihedrals: Iterable[tuple[int, int, int, int]], excluded_atoms: set[int], rdkit_mol: Chem.Mol) -> int:
+def _get_heaviest_terminal_atom(dihedrals: Iterable[tuple[int, int, int, int]], excluded_atoms: set[int], rdkit_mol: Chem.Mol, junction_atom: int) -> int:
     """
     Get the heaviest terminal atom from a list of dihedrals, excluding any atoms in the excluded_atoms set.
 
@@ -464,12 +460,27 @@ def _get_heaviest_terminal_atom(dihedrals: Iterable[tuple[int, int, int, int]], 
     -----
     - This is used to determine which dihedral to keep in many junctions,
         as we want to keep the one which terminates in the heaviest atom to minimize the impact of the constraint.
+    - If the junction atom is planer and in a ring we target heavy atoms in the same ring to help with stiffened dihedrals
     """
     terminal_atoms_with_mass = []
     for dihedral in dihedrals:
         terminal_atom = [a for a in dihedral if a not in excluded_atoms][0]
         mass = rdkit_mol.GetAtomWithIdx(terminal_atom).GetMass()
         terminal_atoms_with_mass.append((terminal_atom, mass))
+
+    # filter the terminal atoms list to end in an aromatic ring if the junction atom is in a ring
+    # this helps with stiffened dihedrals
+    if len(terminal_atoms_with_mass) > 1:
+        # filter atoms which do not terminate in a ring if the physical junction atom is in a ring
+        junction_in_ring = rdkit_mol.GetAtomWithIdx(junction_atom).IsInRing()
+        if junction_in_ring:
+            junction_rings = [ring for ring in rdkit_mol.GetRingInfo().AtomRings() if junction_atom in ring]
+            to_remove = set()
+            for terminal_atom, mass in terminal_atoms_with_mass:
+                if not any(terminal_atom in ring for ring in junction_rings):
+                    to_remove.add((terminal_atom, mass))
+            terminal_atoms_with_mass = [t for t in terminal_atoms_with_mass if t not in to_remove]
+
     # sort by mass then index, ensure deterministic if multiple terminal atoms have the same mass by sorting by index as a tiebreaker
     terminal_atoms_with_mass.sort(key=lambda x: (x[1], x[0]), reverse=True)
     heaviest_terminal_atom = terminal_atoms_with_mass[0][0]
@@ -514,7 +525,7 @@ def _derive_terminal_corrections(junction: dict[str, set[int]], rdkit_mol, force
     # get the set of atoms to ignore when finding the terminal atom
     excluded_atoms = set(dummy_atoms) | set(physical_atoms) | {junction_atom}
     heaviest_terminal_atom = _get_heaviest_terminal_atom(
-        dihedrals=dummy_junction_dihedrals, excluded_atoms=excluded_atoms, rdkit_mol=rdkit_mol
+        dihedrals=dummy_junction_dihedrals, excluded_atoms=excluded_atoms, rdkit_mol=rdkit_mol, junction_atom=junction_atom
     )
     corrections = _get_correction_dict()
     # remove all dihedrals which do not terminate in the heaviest terminal atom
@@ -573,7 +584,7 @@ def _derive_dual_corrections(junction: dict[str, set[int]], rdkit_mol, force_fie
     # find the dihedral to terminate in by mass
     excluded_atoms = set(dummy_atoms) | set(physical_atoms) | {junction_atom}
     heaviest_terminal_atom = _get_heaviest_terminal_atom(
-        dihedrals=dummy_junction_dihedrals, excluded_atoms=excluded_atoms, rdkit_mol=rdkit_mol
+        dihedrals=dummy_junction_dihedrals, excluded_atoms=excluded_atoms, rdkit_mol=rdkit_mol, junction_atom=junction_atom
     )
 
     # we need to check if the junction is planar and if we need to stiffen the dihedral
@@ -620,7 +631,7 @@ def _derive_dual_corrections(junction: dict[str, set[int]], rdkit_mol, force_fie
         excluded_atoms = all_dummies | {junction_atom}
         print("excluded atoms", excluded_atoms)
         dummy_group_terminal_atom = _get_heaviest_terminal_atom(
-            dihedrals=dummy_group_dihedrals, excluded_atoms=excluded_atoms, rdkit_mol=rdkit_mol
+            dihedrals=dummy_group_dihedrals, excluded_atoms=excluded_atoms, rdkit_mol=rdkit_mol, junction_atom=junction_atom
         )
 
         # remove any dihedrals which terminate in this core atom
@@ -692,7 +703,7 @@ def _derive_triple_corrections(junction: dict[str, set[int]], rdkit_mol, force_f
             all_dummies = set([a.GetIdx() for a in rdkit_mol.GetAtoms() if a.GetIdx() not in core_atoms])
             excluded_atoms = all_dummies | {junction_atom}
             dummy_group_terminal_atom = _get_heaviest_terminal_atom(
-                dihedrals=dummy_group_dihedrals, excluded_atoms=excluded_atoms, rdkit_mol=rdkit_mol
+                dihedrals=dummy_group_dihedrals, excluded_atoms=excluded_atoms, rdkit_mol=rdkit_mol, junction_atom=junction_atom
             )
 
             # remove any dihedrals which terminate in this core atom
@@ -860,7 +871,7 @@ def _draw_dummy_corrections(mapping: LigandAtomMapping, corrections: dict[str, d
     # the corrections for each ligand are stored in the opposite end state
     for ligand, state_index in zip([mapping.componentA, mapping.componentB], ["lambda_1", "lambda_0"]):
         correction_data = corrections[state_index]
-        rdkit_mol = ligand.to_rdkit()
+        rdkit_mol = ligand.to_openff().to_rdkit()
         # get a 2D conformer for drawing
         AllChem.Compute2DCoords(rdkit_mol)
 
@@ -872,6 +883,7 @@ def _draw_dummy_corrections(mapping: LigandAtomMapping, corrections: dict[str, d
         ff_labels = ff.label_molecules(ligand.to_openff().to_topology())[0]
 
         # find the junctions of this end state
+        print("finding junctions for ", ligand.name)
         junctions = _find_dummy_junctions_rdkit(ligand=rdkit_mol, dummy_atoms=dummy_atoms)
 
         # we want to group the terms by junction to make the drawing clearer
