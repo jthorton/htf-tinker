@@ -105,6 +105,30 @@ def tyk2_ejm_42():
 
 
 @pytest.fixture(scope="module")
+def tyk2_ejm_49():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "tyk2_ejm_49.sdf")
+
+
+@pytest.fixture(scope="module")
+def tyk2_ejm_54():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "tyk2_ejm_54.sdf")
+
+
+@pytest.fixture(scope="module")
+def tyk2_jmc_28():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "tyk2_jmc_28.sdf")
+
+
+@pytest.fixture(scope="module")
+def tyk2_jmc_30():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "tyk2_jmc_30.sdf")
+
+
+@pytest.fixture(scope="module")
 def chloroethane_to_fluoroethane_mapping(chloroethane, fluoroethane):
     """Return a mapping from chloroethane to fluoroethane."""
     return LigandAtomMapping(
@@ -204,6 +228,41 @@ def ejm_31_to_ejm_42_mapping(tyk2_ejm_31, tyk2_ejm_42):
         componentA=tyk2_ejm_31,
         componentB=tyk2_ejm_42,
         componentA_to_componentB={21: 21, 22: 22, 23: 23, 24: 24, 25: 25, 26: 26, 27: 27, 28: 28, 29: 29, 31: 30, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17, 18: 18, 19: 19, 20: 20}
+    )
+
+@pytest.fixture(scope="module")
+def ejm_31_to_ejm_49_mapping(tyk2_ejm_31, tyk2_ejm_49):
+    return LigandAtomMapping(
+        componentA=tyk2_ejm_31,
+        componentB=tyk2_ejm_49,
+        componentA_to_componentB={21: 20, 22: 21, 23: 22, 24: 23, 25: 24, 26: 25, 27: 26, 28: 27, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17, 18: 18, 20: 19}
+    )
+
+
+@pytest.fixture(scope="module")
+def ejm_50_to_ejm_42_mapping(tyk2_ejm_50, tyk2_ejm_42):
+    return LigandAtomMapping(
+        componentA=tyk2_ejm_50,
+        componentB=tyk2_ejm_42,
+        componentA_to_componentB={21: 21, 22: 22, 23: 23, 24: 24, 25: 25, 26: 26, 27: 27, 28: 28, 29: 29, 30: 30, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17, 18: 18, 19: 19, 20: 20, 31: 31}
+    )
+
+
+@pytest.fixture(scope="module")
+def ejm_42_to_ejm_54_mapping(tyk2_ejm_42, tyk2_ejm_54):
+    return LigandAtomMapping(
+        componentA=tyk2_ejm_42,
+        componentB=tyk2_ejm_54,
+        componentA_to_componentB={21: 20, 22: 21, 23: 22, 24: 23, 25: 24, 26: 25, 27: 26, 28: 27, 32: 31, 34: 32, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17, 18: 18, 19: 29, 20: 19, 31: 30}
+    )
+
+
+@pytest.fixture(scope="module")
+def jmc_28_to_jmc_30_mapping(tyk2_jmc_28, tyk2_jmc_30):
+    return LigandAtomMapping(
+        componentA=tyk2_jmc_28,
+        componentB=tyk2_jmc_30,
+        componentA_to_componentB={23: 23, 24: 24, 25: 25, 26: 26, 27: 27, 28: 28, 29: 29, 30: 30, 31: 31, 32: 32, 33: 33, 34: 36, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17, 18: 18, 19: 19, 20: 20, 21: 21, 22: 22, 35: 34}
     )
 
 
