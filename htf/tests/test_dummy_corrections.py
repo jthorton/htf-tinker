@@ -1,7 +1,10 @@
 import pathlib
 from dataclasses import fields
 
-from htf.utils import _derive_dummy_junction_corrections, make_htf, _draw_dummy_corrections
+import pytest
+
+from htf.utils import _derive_dummy_junction_corrections, make_htf, _draw_dummy_corrections, _find_dummy_junctions_rdkit, _find_free_rotors, _find_improper_corrections, JunctionData, _prune_multiple_path_dihedrals, CorrectionData, _get_heaviest_dihedral_anchor
+from openff.toolkit import Molecule, ForceField
 from openfe.protocols.openmm_rfe import RelativeHybridTopologyProtocol
 
 
@@ -327,3 +330,229 @@ def test_terminal_co_linear_tyk2_corrections(jmc_28_to_jmc_30_mapping, tmp_path)
         force_field="openff-2.0.0.offxml",
         output_dir=tmp_path / "jmc_28_to_jmc_30_corrections"
     )
+
+
+def test_find_dummy_junctions_no_dummies(chloroethane_to_fluoroethane_mapping):
+    """Make sure no dummy groups are found when we have a 1:1 mapping."""
+    # check each end state
+    for mol in [chloroethane_to_fluoroethane_mapping.componentA, chloroethane_to_fluoroethane_mapping.componentB]:
+        dummy_junctions = _find_dummy_junctions_rdkit(mol.to_rdkit(), set())
+        assert not dummy_junctions
+
+
+def test_find_dummy_junctions_single_dummy_atom(chloroethane_to_ethane_mapping):
+    """Make sure we can find the single dummy atom junctions for both cases."""
+    for mol, core in zip(
+            [
+                chloroethane_to_ethane_mapping.componentA.to_rdkit(),
+                chloroethane_to_ethane_mapping.componentB.to_rdkit()
+            ],
+            [
+                chloroethane_to_ethane_mapping.componentA_to_componentB.keys(),
+                chloroethane_to_ethane_mapping.componentA_to_componentB.values()
+            ]
+    ):
+        dummy_atoms = {a.GetIdx() for a in mol.GetAtoms() if a.GetIdx() not in core}
+        dummy_junctions = _find_dummy_junctions_rdkit(mol, dummy_atoms)
+        assert len(dummy_junctions) == 1
+        junction = dummy_junctions[0]
+        assert junction.dummies == {0}
+        assert junction.junction_atom == 1
+        assert junction.physical == {2, 3, 4}
+
+
+def test_find_dummy_junctions_dummy_group(toluene_to_pyridine_mapping):
+    """Make sure we can find the single dummy atom junction when we have a dummy group."""
+    # only toluene should need corrections
+    mol = toluene_to_pyridine_mapping.componentA.to_rdkit()
+    core = set(toluene_to_pyridine_mapping.componentA_to_componentB.keys())
+    dummy_atoms = {a.GetIdx() for a in mol.GetAtoms() if a.GetIdx() not in core}
+    dummy_junctions = _find_dummy_junctions_rdkit(mol, dummy_atoms)
+    assert len(dummy_junctions) == 1
+    junction = dummy_junctions[0]
+    # dual anchor with a single branch
+    assert junction.dummies == {0}
+    assert junction.junction_atom == 1
+    assert junction.physical == {2, 6}
+
+
+def test_find_dummy_junctions_same_ring(isoquinoline):
+    """Make sure that dummy atoms in the same ring as the anchor are not tagged - this avoids bond breaking cases."""
+    # make a fake mapping which only maps one ring of the isoquinoline
+    mol = isoquinoline.to_rdkit()
+    # the 4 carbons and their hydrogens from the broken ring
+    dummy_atoms = {6, 7, 8, 9, 13, 14, 15, 16}
+    dummy_junctions = _find_dummy_junctions_rdkit(mol, dummy_atoms)
+    assert not dummy_junctions
+
+
+def test_find_dummy_junctions_multiple_dummy_branches(jmc_28_to_jmc_30_mapping):
+    """Make sure we can find the multiple dummy junctions connected to a single core anchor"""
+    mol = jmc_28_to_jmc_30_mapping.componentA.to_rdkit()
+    core = set(jmc_28_to_jmc_30_mapping.componentA_to_componentB.keys())
+    dummy_atoms = {a.GetIdx() for a in mol.GetAtoms() if a.GetIdx() not in core}
+    dummy_junctions = _find_dummy_junctions_rdkit(mol, dummy_atoms)
+    assert len(dummy_junctions) == 1
+    junction = dummy_junctions[0]
+    # terminal anchor triple branch case
+    assert junction.dummies == {36, 37, 38}
+    assert junction.junction_atom == 35
+    assert junction.physical == {21}
+
+
+def test_find_dummy_junctions_multiple_dummy_groups(ejm_50_to_ejm_55_mapping):
+    """Make sure we can find the multiple dummy groups with different core anchors in a single molecule ejm_50."""
+    mol = ejm_50_to_ejm_55_mapping.componentA.to_rdkit()
+    core = set(ejm_50_to_ejm_55_mapping.componentA_to_componentB.keys())
+    dummy_atoms = {a.GetIdx() for a in mol.GetAtoms() if a.GetIdx() not in core}
+    dummy_junctions = _find_dummy_junctions_rdkit(mol, dummy_atoms)
+    assert len(dummy_junctions) == 2
+    junctions_by_anchor = {j.junction_atom: j for j in dummy_junctions}
+    # grab the junction for atom 19 - dual anchor double branch
+    junction = junctions_by_anchor[19]
+    assert junction.dummies == {29, 30}
+    assert junction.physical == {17, 31}
+    # check the other terminal junction
+    junction = junctions_by_anchor[31]
+    assert junction.dummies == {32}
+    assert junction.physical == {19}
+
+
+@pytest.mark.parametrize("smiles, groups", [
+    pytest.param("[H:3][C:1]([H:4])([H:5])[C:2]([H:6])([H:7])[H:8]", {2, 3, 4, 5, 6, 7}, id="Ethane"),
+    pytest.param("[H:3][C:1]([H:4])([H:5])[O:2][H:6]", {2, 3, 4, 5}, id="Methanol"),
+    pytest.param("[H:3][C:1]([H:4])([H:5])[S:2][H:6]", {2, 3, 4, 5}, id="Methanethiol"),
+    pytest.param("[H:3][C:1]([H:4])([H:5])[N:2]([H:6])[H:7]", {2, 3, 4, 5, 6}, id="Methylamine")
+])
+def test_find_free_rotors(smiles, groups):
+    """Make sure we can find the free rotors in the given molecule smiles."""
+    mol = Molecule.from_mapped_smiles(smiles)
+    free_rotors = _find_free_rotors(mol.to_rdkit())
+    assert free_rotors == groups
+
+
+def test_find_improper_corrections_no_improper(chloroethane_to_ethane_mapping):
+    """Make sure no improper corrections are found when non are present"""
+    ff = ForceField("openff-2.0.0.offxml")
+    mol = chloroethane_to_ethane_mapping.componentA.to_openff()
+    labels = ff.label_molecules(mol.to_topology())[0]
+    # make the junction for this transformation, Cl is atom 0 which is the dummy
+    junction = JunctionData(
+        junction_atom=1,
+        dummies={0,},
+        physical={2, 3, 4},
+    )
+    corrections = _find_improper_corrections(junction, labels)
+    assert not corrections.removed_impropers
+
+
+def test_find_improper_corrections_single_improper(toluene_to_pyridine_mapping):
+    """Make sure the single improper correction is found which spans a dummy and physical anchor atoms."""
+    ff = ForceField("openff-2.0.0.offxml")
+    mol = toluene_to_pyridine_mapping.componentA.to_openff()
+    labels = ff.label_molecules(mol.to_topology())[0]
+    # make the junction for this transformation, Cl is atom 0 which is the dummy
+    junction = JunctionData(
+        junction_atom=1,
+        dummies={0, },
+        physical={2, 6},
+    )
+    corrections = _find_improper_corrections(junction, labels)
+    # the removed improper should cover all junction atoms
+    assert corrections.removed_impropers == {frozenset({0, 1, 2, 6})}
+
+
+def test_find_improper_corrections_double_improper(ejm_31_to_ejm_49_mapping):
+    """Make sure only a single improper of two available are removed which spans a dummy and physical anchor atoms."""
+    ff = ForceField("openff-2.0.0.offxml")
+    mol = ejm_31_to_ejm_49_mapping.componentB.to_openff()
+    labels = ff.label_molecules(mol.to_topology())[0]
+    junction = JunctionData(
+        junction_atom=17,
+        dummies={31,},
+        physical={16, 18},
+    )
+    corrections = _find_improper_corrections(junction, labels)
+    assert corrections.removed_impropers == {frozenset({16, 17, 18, 31})}
+
+
+def test_prune_dihedrals_single_dihedral():
+    """Make sure no dihedrals are pruned when only a single possible dihedral is available."""
+    corrections = CorrectionData(
+        removed_dihedrals={
+            frozenset({0, 1, 2, 3}),
+        }
+    )
+    # some fake target dihedrals
+    target_dihedrals = {
+        (0, 1, 2, 3),
+        (0, 1, 2, 4)
+    }
+    corrections = _prune_multiple_path_dihedrals(target_dihedrals, corrections)
+    assert corrections.removed_dihedrals == {
+        frozenset({0, 1, 2, 3}),
+    }
+
+
+def test_prune_dihedrals_multiple_dihedrals():
+    """Make sure a single dihedral is added to the removed list when two are available."""
+    corrections = CorrectionData()
+    # this is the case from the docstring of the prune method
+    target_dihedrals = {
+        (0, 1, 2, 4),
+        (0, 1, 3, 4)
+    }
+    corrections = _prune_multiple_path_dihedrals(target_dihedrals, corrections)
+    assert corrections.removed_dihedrals == {
+        # the dihedral with the larger sum of indices should be removed
+        frozenset({0, 1, 3, 4}),
+    }
+
+
+def test_get_heaviest_anchor_dihedral_no_ring(ejm_42_to_ejm_54_mapping):
+    """Make sure we can find the expected heaviest anchor dihedral when the options are not in a ring."""
+    # take the ejm_42 end state and one of the dual anchor junctions
+    mol = ejm_42_to_ejm_54_mapping.componentA.to_rdkit()
+    junction_atom = 19
+    # junction atom, dummies and physical atoms are excluded
+    excluded_atoms = {19, 29, 30, 31, 17}
+    dummy_junction_dihedrals = {
+        (29, 19, 31, 34), # dummy group 1
+        (29, 19, 31, 32),
+        (29, 19, 17, 18),
+        (29, 19, 17, 16),
+        (30, 19, 31, 34), # dummy group 2
+        (30, 19, 31, 32),
+        (30, 19, 17, 18),
+        (30, 19, 17, 16)
+    }
+    heavy_atom = _get_heaviest_dihedral_anchor(
+        dummy_junction_dihedrals,
+        excluded_atoms,
+        mol,
+        junction_atom
+    )
+    assert heavy_atom == 18
+
+
+def test_get_heaviest_anchor_in_ring(chlorobenzene):
+    """Make sure that an anchor in a ring is picked if the core junction is the same ring as the options even if the non-ring
+    atom is heavier"""
+    mol = chlorobenzene.to_rdkit()
+    # pick a hydrogen next to the CL as the dummy atom (7)
+    junction_atom = 2
+    excluded_atoms = {2, 7, 1, 3}
+    dummy_junction_dihedrals = {
+        (7, 2, 1, 0),
+        (7, 2, 1, 6),
+        (7, 2, 3, 8),
+        (7, 2, 3, 4)
+    }
+    heavy_atom = _get_heaviest_dihedral_anchor(
+        dummy_junction_dihedrals,
+        excluded_atoms,
+        mol,
+        junction_atom
+    )
+    # make sure its atom 6 a carbon despite the CL (0) being the heaviest option
+    assert heavy_atom == 6

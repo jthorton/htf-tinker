@@ -375,7 +375,7 @@ def _derive_dummy_junction_corrections(mapping: LigandAtomMapping, force_field: 
         rdkit_mol = smc.to_openff().to_rdkit()
 
         # dummy atoms are all non-mapped atoms
-        dummy_atoms = set([a.GetIdx() for a in rdkit_mol.GetAtoms() if a.GetIdx() not in core_atoms])
+        dummy_atoms = {a.GetIdx() for a in rdkit_mol.GetAtoms() if a.GetIdx() not in core_atoms}
         # label the molecule with parameters
         ff_labels = ff.label_molecules(smc.to_openff().to_topology())[0]
         # tag any free rotors in the molecule as we may need to stiffen torsions which end in the rotor group
@@ -411,8 +411,8 @@ def _derive_dummy_junction_corrections(mapping: LigandAtomMapping, force_field: 
             all_corrections[state_key].merge(corrections)
 
             # remove improper torsions which couple the dummy and core atoms unless they end in the core junction atom
-            corrections = _find_improper_corrections(junction, ff_labels)
-            all_corrections[state_key].merge(corrections)
+            improper_corrections = _find_improper_corrections(junction, ff_labels)
+            all_corrections[state_key].merge(improper_corrections)
     return all_corrections
 
 
@@ -460,20 +460,15 @@ def _find_dummy_junctions_rdkit(rdkit_mol: Chem.Mol, dummy_atoms: set[int]) -> l
         junction_atom = bonded_physicals[0]
 
         # if the junction atom and the dummy atom are in the same ring skip this dummy atom
-        in_same_ring = False
-        for ring in atom_rings:
-            if junction_atom in ring and dummy_atom in ring:
-                in_same_ring = True
-                break
-        if in_same_ring:
+        if any(junction_atom in ring and dummy_atom in ring for ring in atom_rings):
             continue
 
         other_dummies = [a for a in bond_look_up[junction_atom] if a in dummy_atoms and a != dummy_atom]
         dummy_junctions.append(
             JunctionData(
                 junction_atom=junction_atom,
-                dummies=set([dummy_atom] + other_dummies),
-                physical=set([a for a in bond_look_up[junction_atom] if a not in dummy_atoms]),
+                dummies={dummy_atom, *other_dummies},
+                physical={a for a in bond_look_up[junction_atom] if a not in dummy_atoms},
             )
         )
         assigned_dummies.update([dummy_atom] + other_dummies)
@@ -523,7 +518,7 @@ def _get_heaviest_dihedral_anchor(dihedrals: Iterable[tuple[int, int, int, int]]
     dihedrals : Iterable[tuple[int, int, int, int]]
         An iterable of dihedral tuples which span the dummy-core junction.
     excluded_atoms : set[int]
-        A set of atoms which should be considered when finding the heaviest dihedral anchor.
+        A set of atoms which should not be considered when finding the heaviest dihedral anchor.
     rdkit_mol : Chem.Mol
         The RDKit molecule object to use for atom mass lookups.
     junction_atom : int
@@ -545,23 +540,21 @@ def _get_heaviest_dihedral_anchor(dihedrals: Iterable[tuple[int, int, int, int]]
         mass = rdkit_mol.GetAtomWithIdx(terminal_atom).GetMass()
         terminal_atoms_with_mass.append((terminal_atom, mass))
 
-    # filter the terminal atoms list to end in an aromatic ring if the junction atom is in a ring
+    # filter the terminal atoms list to end in a ring if the junction atom is in a ring
     # this helps with stiffened dihedrals
-    if len(terminal_atoms_with_mass) > 1:
-        # filter atoms which do not terminate in a ring if the physical junction atom is in a ring
-        junction_in_ring = rdkit_mol.GetAtomWithIdx(junction_atom).IsInRing()
-        if junction_in_ring:
-            junction_rings = [ring for ring in rdkit_mol.GetRingInfo().AtomRings() if junction_atom in ring]
-            to_remove = set()
-            for terminal_atom, mass in terminal_atoms_with_mass:
-                if not any(terminal_atom in ring for ring in junction_rings):
-                    to_remove.add((terminal_atom, mass))
-            terminal_atoms_with_mass = [t for t in terminal_atoms_with_mass if t not in to_remove]
+    if len(terminal_atoms_with_mass) > 1 and rdkit_mol.GetAtomWithIdx(junction_atom).IsInRing():
+        junction_rings = [
+            ring for ring in rdkit_mol.GetRingInfo().AtomRings()
+            if junction_atom in ring
+        ]
+        terminal_atoms_with_mass = [
+            term_atom
+            for term_atom in terminal_atoms_with_mass
+            if any(term_atom[0] in ring for ring in junction_rings)
+        ]
 
-    # sort by mass then index, ensure deterministic if multiple terminal atoms have the same mass by sorting by index as a tiebreaker
-    terminal_atoms_with_mass.sort(key=lambda x: (x[1], x[0]), reverse=True)
-    heaviest_terminal_atom = terminal_atoms_with_mass[0][0]
-    return heaviest_terminal_atom
+    # get the atom with the largest mass second sort by index
+    return max(terminal_atoms_with_mass, key=lambda x: (x[1], x[0]))[0]
 
 
 def _derive_terminal_corrections(junction: JunctionData, rdkit_mol: Chem.Mol, force_field_labels: dict[str, Any], core_atoms: set[int], free_rotors: set[int]) -> CorrectionData:
@@ -772,10 +765,12 @@ def _derive_triple_corrections(junction: JunctionData, rdkit_mol, force_field_la
         other_core_atoms = core_atoms - physical_atoms - {junction_atom, }
         dummy_group_dihedrals = set()
         for dihedral in force_field_labels["ProperTorsions"].keys():
+            # classify the dihedral type
             has_junction = junction_atom in dihedral
-            has_dummy = len(dummy_atoms.intersection(dihedral)) == 1
-            has_physical = len(physical_atoms.intersection(dihedral)) == 1
+            has_dummy = dummy_atoms.intersection(dihedral)
+            has_physical = physical_atoms.intersection(dihedral)
             has_other_core = other_core_atoms.intersection(dihedral)
+
             # if the dihedral originates from the physical and terminates in the dummy junction we need to remove
             if has_dummy and has_physical and has_junction and has_other_core:
                 corrections.removed_dihedrals.add(frozenset(dihedral))
@@ -786,8 +781,8 @@ def _derive_triple_corrections(junction: JunctionData, rdkit_mol, force_field_la
 
         if dummy_group_dihedrals:
             # find the heaviest terminal atom to anchor dihedrals from the dummy group to
-            # we expect this to be one of the physical atom
-            all_dummies = set([a.GetIdx() for a in rdkit_mol.GetAtoms() if a.GetIdx() not in core_atoms])
+            # we expect this to be one of the physical atoms
+            all_dummies = {a.GetIdx() for a in rdkit_mol.GetAtoms() if a.GetIdx() not in core_atoms}
             excluded_atoms = all_dummies | {junction_atom}
             dummy_group_terminal_atom = _get_heaviest_dihedral_anchor(dihedrals=dummy_group_dihedrals,
                                                                       excluded_atoms=excluded_atoms,
@@ -843,7 +838,8 @@ def _prune_multiple_path_dihedrals(target_dihedrals: set[tuple[int, int, int, in
     dihedrals_by_terminals = defaultdict(set)
 
     for dihedral in target_dihedrals:
-        if dihedral not in corrections.removed_dihedrals or dihedral not in corrections.stiffened_dihedrals:
+        dihedral_fs = frozenset(dihedral)
+        if dihedral_fs not in corrections.removed_dihedrals and dihedral_fs not in corrections.stiffened_dihedrals:
             dihedrals_by_terminals[frozenset([dihedral[0], dihedral[3]])].add(dihedral)
 
     for terminal_atoms, dihedrals in dihedrals_by_terminals.items():
@@ -856,7 +852,7 @@ def _prune_multiple_path_dihedrals(target_dihedrals: set[tuple[int, int, int, in
     return corrections
 
 
-def _check_dummy_junction(junction: JunctionData, corrections: CorrectionData, force_field_labels, core_atoms) -> bool:
+def _check_dummy_junction(junction: JunctionData, corrections: CorrectionData, force_field_labels: dict[str, Any], core_atoms: set[int]) -> bool:
     """
     Check the dummy junction atom is correctly connected via only 3 or less non-redundant valence terms.
     """
@@ -902,10 +898,10 @@ def _check_dummy_junction(junction: JunctionData, corrections: CorrectionData, f
 
         # now we need to check the valence terms are correct
         total_terms = len(valence_terms["bonds"]) + len(valence_terms["angles"]) + len(valence_terms["dihedrals"])
+        # bond (1) + up to 3 softened angles is 4 valid connections
+        if total_terms == 4 and all(angle in corrections.softened_angles for angle in valence_terms["angles"]):
+            continue
         if total_terms > 3 or total_terms == 0:
-            # check if this is a triple junction with softened angles then this is expected
-            if total_terms == 4 and all(angle in corrections.softened_angles for angle in valence_terms["angles"]):
-                continue
             return False
 
     return True

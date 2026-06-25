@@ -81,6 +81,12 @@ def dimethyl_ether():
 
 
 @pytest.fixture(scope="module")
+def isoquinoline():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "isoquinoline.sdf")
+
+
+@pytest.fixture(scope="module")
 def tyk2_ejm_50():
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "tyk2_ejm_50.sdf")
