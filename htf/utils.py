@@ -45,6 +45,56 @@ class CorrectionData:
         return self
 
 
+def _remap_corrections_to_system_indices(
+    corrections: dict[str, "CorrectionData"],
+    old_mol_offset: int,
+    new_mol_offset: int,
+) -> dict[str, "CorrectionData"]:
+    """
+    Remap atom indices in CorrectionData from isolated-molecule indices to
+    full-system (solvated / protein) indices.
+
+    _derive_dummy_junction_corrections produces corrections whose atom indices
+    are 0-based within each isolated molecule.  When the systems are solvated
+    or combined with a protein the ligand atoms are no longer at index 0 in the
+    topology, so the corrections must be shifted before they are consumed by the
+    HTF.
+
+    Parameters
+    ----------
+    corrections : dict[str, CorrectionData]
+        Corrections keyed by "lambda_0" and "lambda_1" with molecule-level indices.
+    old_mol_offset : int
+        Index of the first atom of componentA in the stateA system topology.
+        Use ``ligand_mappings['old_mol_indices'][0]`` from ``get_system_mappings``.
+    new_mol_offset : int
+        Index of the first atom of componentB in the stateB system topology.
+        Use ``ligand_mappings['new_mol_indices'][0]`` from ``get_system_mappings``.
+
+    Returns
+    -------
+    dict[str, CorrectionData]
+        New corrections dict with system-level atom indices.
+    """
+
+    def _shift(correction: CorrectionData, offset: int) -> CorrectionData:
+        remapped = CorrectionData()
+        for f in fields(correction):
+            shifted = {
+                frozenset(idx + offset for idx in atom_set)
+                for atom_set in getattr(correction, f.name)
+            }
+            setattr(remapped, f.name, shifted)
+        return remapped
+
+    return {
+        # lambda_1 corrections reference componentA (old/stateA system) atoms
+        "lambda_1": _shift(corrections["lambda_1"], old_mol_offset),
+        # lambda_0 corrections reference componentB (new/stateB system) atoms
+        "lambda_0": _shift(corrections["lambda_0"], new_mol_offset),
+    }
+
+
 def make_htf(
     mapping: LigandAtomMapping,
     settings,
@@ -151,6 +201,16 @@ def make_htf(
         # These are non-optional settings for this method
         fix_constraints=True,
     )
+
+    # Remap corrections from isolated-molecule indices to full-system indices
+    # so they match the atom indices used by the HTF (which may include
+    # protein or solvent atoms before the ligand).
+    if corrections is not None:
+        corrections = _remap_corrections_to_system_indices(
+            corrections,
+            old_mol_offset=ligand_mappings["old_mol_indices"][0],
+            new_mol_offset=ligand_mappings["new_mol_indices"][0],
+        )
 
     #  e. Finally get the positions
     stateB_positions = _rfe_utils.topologyhelpers.set_and_check_new_positions(

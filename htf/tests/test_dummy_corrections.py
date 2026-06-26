@@ -19,6 +19,7 @@ from openff.toolkit import Molecule, ForceField
 from openff.units import unit as offunit
 from openmm import unit as ommunit
 from openfe.protocols.openmm_rfe import RelativeHybridTopologyProtocol
+from openfe import SolventComponent
 
 
 def test_single_terminal_corrections(ejm_50_to_ejm_42_mapping, tmp_path):
@@ -1158,3 +1159,29 @@ def test_propane_dimethyl_ether_torsion_corrections_htf(
         == corrections["lambda_1"].removed_dihedrals
         | corrections["lambda_1"].stiffened_dihedrals
     )
+
+
+def test_toluene_pyridine_corrections_htf_solvent(toluene_to_pyridine_mapping):
+    """Make sure the same angle corrections are applied in a solvated system, in this case there should be no difference."""
+    settings = RelativeHybridTopologyProtocol.default_settings()
+    corrections = _derive_dummy_junction_corrections(
+        toluene_to_pyridine_mapping,
+        settings.forcefield_settings.small_molecule_forcefield,
+    )
+
+    # make a water solvent to add to the system
+    solvent = SolventComponent()
+    # limit the number of waters added
+    settings.solvation_settings.number_of_solvent_molecules = 100
+    settings.solvation_settings.solvent_padding = None
+    htf = make_htf(
+        toluene_to_pyridine_mapping, settings, solvent=solvent, corrections=corrections
+    )
+
+    hybrid_topology = htf.omm_hybrid_topology
+    # check how many waters were added
+    num_waters = sum((1 for r in hybrid_topology.residues() if r.name == "HOH"))
+    assert num_waters == 100
+
+    # the corrections should not change in this case
+    assert corrections == htf._valence_corrections_terms
