@@ -3,9 +3,11 @@ import openmm
 
 
 def _make_system_with_cmap(
-        map_sizes: list[int],
-        mapped_torsions: list[tuple[int, int, int, int, int, int, int, int, int]] | None = None,
-        num_atoms: int = 8
+    map_sizes: list[int],
+    mapped_torsions: (
+        list[tuple[int, int, int, int, int, int, int, int, int]] | None
+    ) = None,
+    num_atoms: int = 8,
 ):
     """
     Build an OpenMM System with a CMAP term based on the provided mapping data.
@@ -17,7 +19,12 @@ def _make_system_with_cmap(
     assert num_atoms >= 8, "num_atoms must be at least 8 to accommodate mapped torsions"
     system = openmm.System()
     # add dummy forces to avoid errors
-    for force in [openmm.NonbondedForce, openmm.HarmonicBondForce, openmm.HarmonicAngleForce, openmm.PeriodicTorsionForce]:
+    for force in [
+        openmm.NonbondedForce,
+        openmm.HarmonicBondForce,
+        openmm.HarmonicAngleForce,
+        openmm.PeriodicTorsionForce,
+    ]:
         system.addForce(force())
 
     for _ in range(num_atoms):
@@ -42,13 +49,13 @@ def _make_system_with_cmap(
     # build a basic topology for the number of atoms bonding each atom to the next
     topology = openmm.app.Topology()
     chain = topology.addChain()
-    res = topology.addResidue('RES', chain)
+    res = topology.addResidue("RES", chain)
     atoms = []
     for i in range(num_atoms):
-        atom = topology.addAtom(f'C{i+1}', openmm.app.element.carbon, res)
+        atom = topology.addAtom(f"C{i+1}", openmm.app.element.carbon, res)
         atoms.append(atom)
         if i > 0:
-            topology.addBond(atoms[i-1], atoms[i])
+            topology.addBond(atoms[i - 1], atoms[i])
     # build a fake set of positions
     positions = openmm.unit.Quantity(np.zeros((num_atoms, 3)), openmm.unit.nanometer)
     return system, topology, positions

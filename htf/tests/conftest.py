@@ -35,21 +35,27 @@ def ethane():
 def chlorobenzene():
     """Load chlorobenzene with partial charges from sdf file."""
     with resources.files("htf.tests.data") as f:
-        return SmallMoleculeComponent.from_sdf_file(f / "t4_lysozyme_data" / "chlorobenzene.sdf")
+        return SmallMoleculeComponent.from_sdf_file(
+            f / "t4_lysozyme_data" / "chlorobenzene.sdf"
+        )
 
 
 @pytest.fixture(scope="module")
 def fluorobenzene():
     """Load fluorobenzene with partial charges from sdf file."""
     with resources.files("htf.tests.data") as f:
-        return SmallMoleculeComponent.from_sdf_file(f / "t4_lysozyme_data" / "fluorobenzene.sdf")
+        return SmallMoleculeComponent.from_sdf_file(
+            f / "t4_lysozyme_data" / "fluorobenzene.sdf"
+        )
 
 
 @pytest.fixture(scope="module")
 def benzene():
     """Load benzene with partial charges from sdf file."""
     with resources.files("htf.tests.data") as f:
-        return SmallMoleculeComponent.from_sdf_file(f / "t4_lysozyme_data" / "benzene.sdf")
+        return SmallMoleculeComponent.from_sdf_file(
+            f / "t4_lysozyme_data" / "benzene.sdf"
+        )
 
 
 @pytest.fixture(scope="module")
@@ -142,9 +148,17 @@ def chloroethane_to_fluoroethane_mapping(chloroethane, fluoroethane):
         componentB=fluoroethane,
         componentA_to_componentB={
             # perfect one-to-one mapping
-            0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7,
-        }
+            0: 0,
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+            5: 5,
+            6: 6,
+            7: 7,
+        },
     )
+
 
 @pytest.fixture(scope="module")
 def chloroethane_to_ethane_mapping(chloroethane, ethane):
@@ -154,9 +168,16 @@ def chloroethane_to_ethane_mapping(chloroethane, ethane):
         componentB=ethane,
         componentA_to_componentB={
             # Cl-H not mapped, all others one-to-one
-            1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7,
-        }
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+            5: 5,
+            6: 6,
+            7: 7,
+        },
     )
+
 
 @pytest.fixture(scope="module")
 def chlorobenzene_to_fluorobenzene_mapping(chlorobenzene, fluorobenzene):
@@ -166,9 +187,21 @@ def chlorobenzene_to_fluorobenzene_mapping(chlorobenzene, fluorobenzene):
         componentB=fluorobenzene,
         componentA_to_componentB={
             # perfect one-to-one mapping
-            0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11
-        }
+            0: 0,
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+            5: 5,
+            6: 6,
+            7: 7,
+            8: 8,
+            9: 9,
+            10: 10,
+            11: 11,
+        },
     )
+
 
 @pytest.fixture(scope="module")
 def chlorobenzene_to_benzene_mapping(chlorobenzene, benzene):
@@ -178,9 +211,20 @@ def chlorobenzene_to_benzene_mapping(chlorobenzene, benzene):
         componentB=benzene,
         componentA_to_componentB={
             # Cl-H not mapped, all others one-to-one
-            1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11
-        }
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+            5: 5,
+            6: 6,
+            7: 7,
+            8: 8,
+            9: 9,
+            10: 10,
+            11: 11,
+        },
     )
+
 
 @pytest.fixture(scope="module")
 def toluene_to_pyridine_mapping(toluene, pyridine):
@@ -190,9 +234,20 @@ def toluene_to_pyridine_mapping(toluene, pyridine):
         componentB=pyridine,
         componentA_to_componentB={
             # most things mapped in ring but methyl C and Hs are not mapped
-            1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 10: 6, 11: 7, 12: 8, 13: 9, 14: 10
-        }
+            1: 0,
+            2: 1,
+            3: 2,
+            4: 3,
+            5: 4,
+            6: 5,
+            10: 6,
+            11: 7,
+            12: 8,
+            13: 9,
+            14: 10,
+        },
     )
+
 
 @pytest.fixture(scope="module")
 def propane_to_dimethyl_ether_mapping(propane, dimethyl_ether):
@@ -202,9 +257,18 @@ def propane_to_dimethyl_ether_mapping(propane, dimethyl_ether):
         componentB=dimethyl_ether,
         componentA_to_componentB={
             # only the central Hs on propane are not mapped
-            0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8
-        }
+            0: 0,
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+            5: 5,
+            6: 6,
+            7: 7,
+            8: 8,
+        },
     )
+
 
 @pytest.fixture(scope="module")
 def propane_to_chloroethane(propane, chloroethane):
@@ -214,9 +278,17 @@ def propane_to_chloroethane(propane, chloroethane):
         componentB=chloroethane,
         componentA_to_componentB={
             # map all but the terminal 3Hs in propane
-            2: 5, 3: 6, 4: 7, 9: 4, 10: 3, 0: 1, 1: 2, 5: 0
-        }
+            2: 5,
+            3: 6,
+            4: 7,
+            9: 4,
+            10: 3,
+            0: 1,
+            1: 2,
+            5: 0,
+        },
     )
+
 
 @pytest.fixture(scope="module")
 def ejm_50_to_ejm_55_mapping(tyk2_ejm_50, tyk2_ejm_55):
@@ -224,7 +296,39 @@ def ejm_50_to_ejm_55_mapping(tyk2_ejm_50, tyk2_ejm_55):
     return LigandAtomMapping(
         componentA=tyk2_ejm_50,
         componentB=tyk2_ejm_55,
-        componentA_to_componentB={21: 20, 22: 21, 23: 22, 24: 23, 25: 24, 26: 25, 27: 26, 28: 27, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17, 18: 18, 19: 28, 20: 19, 31: 29})
+        componentA_to_componentB={
+            21: 20,
+            22: 21,
+            23: 22,
+            24: 23,
+            25: 24,
+            26: 25,
+            27: 26,
+            28: 27,
+            0: 0,
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+            5: 5,
+            6: 6,
+            7: 7,
+            8: 8,
+            9: 9,
+            10: 10,
+            11: 11,
+            12: 12,
+            13: 13,
+            14: 14,
+            15: 15,
+            16: 16,
+            17: 17,
+            18: 18,
+            19: 28,
+            20: 19,
+            31: 29,
+        },
+    )
 
 
 @pytest.fixture(scope="module")
@@ -233,15 +337,77 @@ def ejm_31_to_ejm_42_mapping(tyk2_ejm_31, tyk2_ejm_42):
     return LigandAtomMapping(
         componentA=tyk2_ejm_31,
         componentB=tyk2_ejm_42,
-        componentA_to_componentB={21: 21, 22: 22, 23: 23, 24: 24, 25: 25, 26: 26, 27: 27, 28: 28, 29: 29, 31: 30, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17, 18: 18, 19: 19, 20: 20}
+        componentA_to_componentB={
+            21: 21,
+            22: 22,
+            23: 23,
+            24: 24,
+            25: 25,
+            26: 26,
+            27: 27,
+            28: 28,
+            29: 29,
+            31: 30,
+            0: 0,
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+            5: 5,
+            6: 6,
+            7: 7,
+            8: 8,
+            9: 9,
+            10: 10,
+            11: 11,
+            12: 12,
+            13: 13,
+            14: 14,
+            15: 15,
+            16: 16,
+            17: 17,
+            18: 18,
+            19: 19,
+            20: 20,
+        },
     )
+
 
 @pytest.fixture(scope="module")
 def ejm_31_to_ejm_49_mapping(tyk2_ejm_31, tyk2_ejm_49):
     return LigandAtomMapping(
         componentA=tyk2_ejm_31,
         componentB=tyk2_ejm_49,
-        componentA_to_componentB={21: 20, 22: 21, 23: 22, 24: 23, 25: 24, 26: 25, 27: 26, 28: 27, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17, 18: 18, 20: 19}
+        componentA_to_componentB={
+            21: 20,
+            22: 21,
+            23: 22,
+            24: 23,
+            25: 24,
+            26: 25,
+            27: 26,
+            28: 27,
+            0: 0,
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+            5: 5,
+            6: 6,
+            7: 7,
+            8: 8,
+            9: 9,
+            10: 10,
+            11: 11,
+            12: 12,
+            13: 13,
+            14: 14,
+            15: 15,
+            16: 16,
+            17: 17,
+            18: 18,
+            20: 19,
+        },
     )
 
 
@@ -250,7 +416,40 @@ def ejm_50_to_ejm_42_mapping(tyk2_ejm_50, tyk2_ejm_42):
     return LigandAtomMapping(
         componentA=tyk2_ejm_50,
         componentB=tyk2_ejm_42,
-        componentA_to_componentB={21: 21, 22: 22, 23: 23, 24: 24, 25: 25, 26: 26, 27: 27, 28: 28, 29: 29, 30: 30, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17, 18: 18, 19: 19, 20: 20, 31: 31}
+        componentA_to_componentB={
+            21: 21,
+            22: 22,
+            23: 23,
+            24: 24,
+            25: 25,
+            26: 26,
+            27: 27,
+            28: 28,
+            29: 29,
+            30: 30,
+            0: 0,
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+            5: 5,
+            6: 6,
+            7: 7,
+            8: 8,
+            9: 9,
+            10: 10,
+            11: 11,
+            12: 12,
+            13: 13,
+            14: 14,
+            15: 15,
+            16: 16,
+            17: 17,
+            18: 18,
+            19: 19,
+            20: 20,
+            31: 31,
+        },
     )
 
 
@@ -259,7 +458,40 @@ def ejm_42_to_ejm_54_mapping(tyk2_ejm_42, tyk2_ejm_54):
     return LigandAtomMapping(
         componentA=tyk2_ejm_42,
         componentB=tyk2_ejm_54,
-        componentA_to_componentB={21: 20, 22: 21, 23: 22, 24: 23, 25: 24, 26: 25, 27: 26, 28: 27, 32: 31, 34: 32, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17, 18: 18, 19: 29, 20: 19, 31: 30}
+        componentA_to_componentB={
+            21: 20,
+            22: 21,
+            23: 22,
+            24: 23,
+            25: 24,
+            26: 25,
+            27: 26,
+            28: 27,
+            32: 31,
+            34: 32,
+            0: 0,
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+            5: 5,
+            6: 6,
+            7: 7,
+            8: 8,
+            9: 9,
+            10: 10,
+            11: 11,
+            12: 12,
+            13: 13,
+            14: 14,
+            15: 15,
+            16: 16,
+            17: 17,
+            18: 18,
+            19: 29,
+            20: 19,
+            31: 30,
+        },
     )
 
 
@@ -268,7 +500,44 @@ def jmc_28_to_jmc_30_mapping(tyk2_jmc_28, tyk2_jmc_30):
     return LigandAtomMapping(
         componentA=tyk2_jmc_28,
         componentB=tyk2_jmc_30,
-        componentA_to_componentB={23: 23, 24: 24, 25: 25, 26: 26, 27: 27, 28: 28, 29: 29, 30: 30, 31: 31, 32: 32, 33: 33, 34: 36, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14, 15: 15, 16: 16, 17: 17, 18: 18, 19: 19, 20: 20, 21: 21, 22: 22, 35: 34}
+        componentA_to_componentB={
+            23: 23,
+            24: 24,
+            25: 25,
+            26: 26,
+            27: 27,
+            28: 28,
+            29: 29,
+            30: 30,
+            31: 31,
+            32: 32,
+            33: 33,
+            34: 36,
+            0: 0,
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+            5: 5,
+            6: 6,
+            7: 7,
+            8: 8,
+            9: 9,
+            10: 10,
+            11: 11,
+            12: 12,
+            13: 13,
+            14: 14,
+            15: 15,
+            16: 16,
+            17: 17,
+            18: 18,
+            19: 19,
+            20: 20,
+            21: 21,
+            22: 22,
+            35: 34,
+        },
     )
 
 
@@ -276,11 +545,15 @@ def jmc_28_to_jmc_30_mapping(tyk2_jmc_28, tyk2_jmc_30):
 def t4_lysozyme_solvated():
     """Load the T4 lysozyme L99A structure and solvent from the pdb file."""
     with resources.files("htf.tests.data") as f:
-        return ProteinComponent.from_pdb_file((f / "t4_lysozyme_data" / "t4_lysozyme_solvated.pdb").as_posix())
+        return ProteinComponent.from_pdb_file(
+            (f / "t4_lysozyme_data" / "t4_lysozyme_solvated.pdb").as_posix()
+        )
 
 
 @pytest.fixture(scope="module")
-def htf_chloro_fluoroethane(chloroethane, fluoroethane, chloroethane_to_fluoroethane_mapping):
+def htf_chloro_fluoroethane(
+    chloroethane, fluoroethane, chloroethane_to_fluoroethane_mapping
+):
     """Generate the htf for chloroethane to fluoroethane."""
     settings = RelativeHybridTopologyProtocol.default_settings()
     # make sure we interpolate the 1-4 exceptions involving dummy atoms if present
@@ -312,8 +585,9 @@ def htf_chloro_fluoroethane(chloroethane, fluoroethane, chloroethane_to_fluoroet
         "fluoro_charges": fluoro_charges,
         "electrostatic_scale": ff.get_parameter_handler("Electrostatics").scale14,
         "vdW_scale": ff.get_parameter_handler("vdW").scale14,
-        "force_field": ff
+        "force_field": ff,
     }
+
 
 @pytest.fixture(scope="module")
 def htf_chloro_ethane(chloroethane, ethane, chloroethane_to_ethane_mapping):
@@ -349,10 +623,13 @@ def htf_chloro_ethane(chloroethane, ethane, chloroethane_to_ethane_mapping):
         "ethane_charges": ethane_charges,
         "electrostatic_scale": ff.get_parameter_handler("Electrostatics").scale14,
         "vdW_scale": ff.get_parameter_handler("vdW").scale14,
-        "force_field": ff
+        "force_field": ff,
     }
 
-def apply_box_vectors_and_fix_nn_force(hybrid_topology_factory: DevelopmentHybridTopologyFactory, force_field: ForceField):
+
+def apply_box_vectors_and_fix_nn_force(
+    hybrid_topology_factory: DevelopmentHybridTopologyFactory, force_field: ForceField
+):
     """
     Edit the systems in the hybrid topology factory to have the correct box vectors and nonbonded force settings for the T4 lysozyme system.
     """
@@ -361,36 +638,58 @@ def apply_box_vectors_and_fix_nn_force(hybrid_topology_factory: DevelopmentHybri
     box_vectors = [
         openmm.vec3.Vec3(x=6.90789161545809, y=0.0, z=0.0) * unit.nanometer,
         openmm.vec3.Vec3(x=0.0, y=6.90789161545809, z=0.0) * unit.nanometer,
-        openmm.vec3.Vec3(x=3.453945807729045, y=3.453945807729045, z=4.88461700499211) * unit.nanometer,
+        openmm.vec3.Vec3(x=3.453945807729045, y=3.453945807729045, z=4.88461700499211)
+        * unit.nanometer,
     ]
     hybrid_system.setDefaultPeriodicBoxVectors(*box_vectors)
     for force in hybrid_system.getForces():
         if isinstance(force, openmm.NonbondedForce):
             force.setNonbondedMethod(openmm.NonbondedForce.PME)
             force.setCutoffDistance(
-                force_field.get_parameter_handler("Electrostatics").cutoff.m_as(offunit.nanometer) * unit.nanometer)
+                force_field.get_parameter_handler("Electrostatics").cutoff.m_as(
+                    offunit.nanometer
+                )
+                * unit.nanometer
+            )
             force.setUseDispersionCorrection(False)
             force.setUseSwitchingFunction(False)
         elif isinstance(force, openmm.CustomNonbondedForce):
             force.setCutoffDistance(
-                force_field.get_parameter_handler("Electrostatics").cutoff.m_as(offunit.nanometer) * unit.nanometer)
+                force_field.get_parameter_handler("Electrostatics").cutoff.m_as(
+                    offunit.nanometer
+                )
+                * unit.nanometer
+            )
             force.setNonbondedMethod(force.CutoffPeriodic)
             force.setUseLongRangeCorrection(False)
             force.setUseSwitchingFunction(False)
 
     # make sure both end state systems have the same cutoff method and distance
-    for end_state in [hybrid_topology_factory._old_system, hybrid_topology_factory._new_system]:
+    for end_state in [
+        hybrid_topology_factory._old_system,
+        hybrid_topology_factory._new_system,
+    ]:
         end_state.setDefaultPeriodicBoxVectors(*box_vectors)
         for force in end_state.getForces():
             if isinstance(force, openmm.NonbondedForce):
                 force.setNonbondedMethod(openmm.NonbondedForce.PME)
                 force.setCutoffDistance(
-                    force_field.get_parameter_handler("Electrostatics").cutoff.m_as(offunit.nanometer) * unit.nanometer)
+                    force_field.get_parameter_handler("Electrostatics").cutoff.m_as(
+                        offunit.nanometer
+                    )
+                    * unit.nanometer
+                )
                 force.setUseDispersionCorrection(False)
                 force.setUseSwitchingFunction(False)
 
+
 @pytest.fixture(scope="module")
-def htf_chlorobenzene_fluorobenzene(chlorobenzene, fluorobenzene, chlorobenzene_to_fluorobenzene_mapping, t4_lysozyme_solvated):
+def htf_chlorobenzene_fluorobenzene(
+    chlorobenzene,
+    fluorobenzene,
+    chlorobenzene_to_fluorobenzene_mapping,
+    t4_lysozyme_solvated,
+):
     """Generate the htf for chlorobenzene to fluorobenzene."""
     settings = RelativeHybridTopologyProtocol.default_settings()
     # make sure we interpolate the 1-4 exceptions involving dummy atoms if present
@@ -405,7 +704,11 @@ def htf_chlorobenzene_fluorobenzene(chlorobenzene, fluorobenzene, chlorobenzene_
     fluoro_openff = fluorobenzene.to_openff()
     fluoro_charges = fluoro_openff.partial_charges.m_as(offunit.elementary_charge)
     fluoro_labels = ff.label_molecules(fluoro_openff.to_topology())[0]
-    htf = make_htf(mapping=chlorobenzene_to_fluorobenzene_mapping, settings=settings, protein=t4_lysozyme_solvated)
+    htf = make_htf(
+        mapping=chlorobenzene_to_fluorobenzene_mapping,
+        settings=settings,
+        protein=t4_lysozyme_solvated,
+    )
     hybrid_system = htf.hybrid_system
 
     apply_box_vectors_and_fix_nn_force(hybrid_topology_factory=htf, force_field=ff)
@@ -425,11 +728,14 @@ def htf_chlorobenzene_fluorobenzene(chlorobenzene, fluorobenzene, chlorobenzene_
         "fluoro_charges": fluoro_charges,
         "electrostatic_scale": ff.get_parameter_handler("Electrostatics").scale14,
         "vdW_scale": ff.get_parameter_handler("vdW").scale14,
-        "force_field": ff
+        "force_field": ff,
     }
 
+
 @pytest.fixture(scope="module")
-def htf_chlorobenzene_benzene(chlorobenzene, benzene, chlorobenzene_to_benzene_mapping, t4_lysozyme_solvated):
+def htf_chlorobenzene_benzene(
+    chlorobenzene, benzene, chlorobenzene_to_benzene_mapping, t4_lysozyme_solvated
+):
     """Generate the htf for chlorobenzene to benzene with interpolate 1-4s on!"""
     settings = RelativeHybridTopologyProtocol.default_settings()
     # make sure we interpolate the 1-4 exceptions involving dummy atoms
@@ -445,7 +751,11 @@ def htf_chlorobenzene_benzene(chlorobenzene, benzene, chlorobenzene_to_benzene_m
     benzene_openff = benzene.to_openff()
     benzene_charges = benzene_openff.partial_charges.m_as(offunit.elementary_charge)
     benzene_labels = ff.label_molecules(benzene_openff.to_topology())[0]
-    htf = make_htf(mapping=chlorobenzene_to_benzene_mapping, settings=settings, protein=t4_lysozyme_solvated)
+    htf = make_htf(
+        mapping=chlorobenzene_to_benzene_mapping,
+        settings=settings,
+        protein=t4_lysozyme_solvated,
+    )
     hybrid_system = htf.hybrid_system
 
     apply_box_vectors_and_fix_nn_force(hybrid_topology_factory=htf, force_field=ff)
@@ -465,8 +775,9 @@ def htf_chlorobenzene_benzene(chlorobenzene, benzene, chlorobenzene_to_benzene_m
         "benzene_charges": benzene_charges,
         "electrostatic_scale": ff.get_parameter_handler("Electrostatics").scale14,
         "vdW_scale": ff.get_parameter_handler("vdW").scale14,
-        "force_field": ff
+        "force_field": ff,
     }
+
 
 @pytest.fixture(scope="module")
 def htf_toluene_pyridine(toluene, pyridine, toluene_to_pyridine_mapping):
@@ -501,11 +812,14 @@ def htf_toluene_pyridine(toluene, pyridine, toluene_to_pyridine_mapping):
         "pyridine_charges": pyridine_charges,
         "electrostatic_scale": ff.get_parameter_handler("Electrostatics").scale14,
         "vdW_scale": ff.get_parameter_handler("vdW").scale14,
-        "force_field": ff
+        "force_field": ff,
     }
 
+
 @pytest.fixture(scope="module")
-def htf_propane_dimethyl_ether(propane, dimethyl_ether, propane_to_dimethyl_ether_mapping):
+def htf_propane_dimethyl_ether(
+    propane, dimethyl_ether, propane_to_dimethyl_ether_mapping
+):
     """Generate the htf for propane to dimethyl ether."""
     settings = RelativeHybridTopologyProtocol.default_settings()
     # make sure we interpolate the 1-4 exceptions involving dummy atoms if present
@@ -518,7 +832,9 @@ def htf_propane_dimethyl_ether(propane, dimethyl_ether, propane_to_dimethyl_ethe
     propane_charges = propane_openff.partial_charges.m_as(offunit.elementary_charge)
     propane_labels = ff.label_molecules(propane_openff.to_topology())[0]
     dimethyl_ether_openff = dimethyl_ether.to_openff()
-    dimethyl_ether_charges = dimethyl_ether_openff.partial_charges.m_as(offunit.elementary_charge)
+    dimethyl_ether_charges = dimethyl_ether_openff.partial_charges.m_as(
+        offunit.elementary_charge
+    )
     dimethyl_ether_labels = ff.label_molecules(dimethyl_ether_openff.to_topology())[0]
     htf = make_htf(mapping=propane_to_dimethyl_ether_mapping, settings=settings)
     hybrid_system = htf.hybrid_system
@@ -537,8 +853,9 @@ def htf_propane_dimethyl_ether(propane, dimethyl_ether, propane_to_dimethyl_ethe
         "dimethyl_ether_charges": dimethyl_ether_charges,
         "electrostatic_scale": ff.get_parameter_handler("Electrostatics").scale14,
         "vdW_scale": ff.get_parameter_handler("vdW").scale14,
-        "force_field": ff
+        "force_field": ff,
     }
+
 
 @pytest.fixture(scope="module")
 def htf_propane_chloroethane(propane, chloroethane, propane_to_chloroethane):
@@ -573,8 +890,9 @@ def htf_propane_chloroethane(propane, chloroethane, propane_to_chloroethane):
         "chloro_charges": chloro_charges,
         "electrostatic_scale": ff.get_parameter_handler("Electrostatics").scale14,
         "vdW_scale": ff.get_parameter_handler("vdW").scale14,
-        "force_field": ff
+        "force_field": ff,
     }
+
 
 @pytest.fixture(scope="module")
 def htf_ejm_50_to_ejm_55(tyk2_ejm_50, tyk2_ejm_55, ejm_50_to_ejm_55_mapping):
@@ -609,5 +927,5 @@ def htf_ejm_50_to_ejm_55(tyk2_ejm_50, tyk2_ejm_55, ejm_50_to_ejm_55_mapping):
         "ejm_55_charges": ejm_55_charges,
         "electrostatic_scale": ff.get_parameter_handler("Electrostatics").scale14,
         "vdW_scale": ff.get_parameter_handler("vdW").scale14,
-        "force_field": ff
+        "force_field": ff,
     }

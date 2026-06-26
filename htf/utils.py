@@ -7,7 +7,7 @@ from htf import DevelopmentHybridTopologyFactory
 from openmmforcefields.generators import SystemGenerator
 from openmm import app, unit
 import openmm
-from gufe import SmallMoleculeComponent, LigandAtomMapping, ProteinComponent, SolventComponent
+from gufe import LigandAtomMapping, ProteinComponent, SolventComponent
 from openfe.protocols.openmm_rfe import _rfe_utils
 from openfe.protocols.openmm_utils import system_creation
 import copy
@@ -19,7 +19,39 @@ from openff.toolkit import ForceField
 
 logger = logging.getLogger(__name__)
 
-def make_htf(mapping: LigandAtomMapping, settings, protein: ProteinComponent = None, solvent: SolventComponent = None, corrections = None) -> DevelopmentHybridTopologyFactory:
+
+@dataclass
+class JunctionData:
+    junction_atom: int
+    dummies: set[int] = field(default_factory=set)
+    physical: set[int] = field(default_factory=set)
+
+
+@dataclass
+class CorrectionData:
+    removed_angles: set[frozenset[int]] = field(default_factory=set)
+    softened_angles: set[frozenset[int]] = field(default_factory=set)
+    stiffened_angles: set[frozenset[int]] = field(default_factory=set)
+    removed_dihedrals: set[frozenset[int]] = field(default_factory=set)
+    stiffened_dihedrals: set[frozenset[int]] = field(default_factory=set)
+    removed_impropers: set[frozenset[int]] = field(default_factory=set)
+
+    def merge(self, other: "CorrectionData") -> "CorrectionData":
+        """Merge another CorrectionData object into this one."""
+        for f in fields(self):
+            current_set = getattr(self, f.name)
+            other_set = getattr(other, f.name)
+            current_set.update(other_set)
+        return self
+
+
+def make_htf(
+    mapping: LigandAtomMapping,
+    settings,
+    protein: ProteinComponent | None = None,
+    solvent: SolventComponent | None = None,
+    corrections: dict[str, CorrectionData] | None = None,
+) -> DevelopmentHybridTopologyFactory:
     """Code copied from the RBFE protocol to make an HTF."""
 
     system_generator = SystemGenerator(
@@ -29,36 +61,38 @@ def make_htf(mapping: LigandAtomMapping, settings, protein: ProteinComponent = N
             "constraints": app.HBonds,
             "rigidWater": True,
             "hydrogenMass": settings.forcefield_settings.hydrogen_mass * unit.amu,
-            "removeCMMotion": settings.integrator_settings.remove_com
+            "removeCMMotion": settings.integrator_settings.remove_com,
         },
         periodic_forcefield_kwargs={
-            'nonbondedMethod': app.PME,
-            'nonbondedCutoff': 0.9 * unit.nanometers,
+            "nonbondedMethod": app.PME,
+            "nonbondedCutoff": 0.9 * unit.nanometers,
         },
         barostat=openmm.MonteCarloBarostat(
-            ensure_quantity(settings.thermo_settings.pressure, 'openmm'),
-            ensure_quantity(settings.thermo_settings.temperature, 'openmm'),
+            ensure_quantity(settings.thermo_settings.pressure, "openmm"),
+            ensure_quantity(settings.thermo_settings.temperature, "openmm"),
             settings.integrator_settings.barostat_frequency.m,
         ),
-        cache=None
+        cache=None,
     )
     small_mols = [mapping.componentA, mapping.componentB]
     # copy a lot of code from the RHT protocol
     off_small_mols = {
-        'stateA': [(mapping.componentA, mapping.componentA.to_openff())],
-        'stateB': [(mapping.componentB, mapping.componentB.to_openff())],
-        'both': [(m, m.to_openff()) for m in small_mols
-                 if (m != mapping.componentA and m != mapping.componentB)]
+        "stateA": [(mapping.componentA, mapping.componentA.to_openff())],
+        "stateB": [(mapping.componentB, mapping.componentB.to_openff())],
+        "both": [
+            (m, m.to_openff())
+            for m in small_mols
+            if (m != mapping.componentA and m != mapping.componentB)
+        ],
     }
 
     # c. force the creation of parameters
     # This is necessary because we need to have the FF templates
     # registered ahead of solvating the system.
-    for smc, mol in chain(off_small_mols['stateA'],
-                          off_small_mols['stateB'],
-                          off_small_mols['both']):
-        system_generator.create_system(mol.to_topology().to_openmm(),
-                                       molecules=[mol])
+    for smc, mol in chain(
+        off_small_mols["stateA"], off_small_mols["stateB"], off_small_mols["both"]
+    ):
+        system_generator.create_system(mol.to_topology().to_openmm(), molecules=[mol])
 
     # c. get OpenMM Modeller + a dictionary of resids for each component
     stateA_modeller, comp_resids = system_creation.get_omm_modeller(
@@ -66,58 +100,67 @@ def make_htf(mapping: LigandAtomMapping, settings, protein: ProteinComponent = N
         protein_comp=protein,
         # add the solvent if passed
         solvent_comp=solvent,
-        small_mols=dict(chain(off_small_mols['stateA'],
-                              off_small_mols['both'])),
+        small_mols=dict(chain(off_small_mols["stateA"], off_small_mols["both"])),
         omm_forcefield=system_generator.forcefield,
         solvent_settings=settings.solvation_settings,
     )
     # d. get topology & positions
     # Note: roundtrip positions to remove vec3 issues
     stateA_topology = stateA_modeller.getTopology()
-    stateA_positions = to_openmm(
-        from_openmm(stateA_modeller.getPositions())
-    )
+    stateA_positions = to_openmm(from_openmm(stateA_modeller.getPositions()))
 
     # e. create the stateA System
     # Block out oechem backend in system_generator calls to avoid
     # any issues with smiles roundtripping between rdkit and oechem
     stateA_system = system_generator.create_system(
         stateA_modeller.topology,
-        molecules=[m for _, m in chain(off_small_mols['stateA'],
-                                       off_small_mols['both'])],
+        molecules=[
+            m for _, m in chain(off_small_mols["stateA"], off_small_mols["both"])
+        ],
     )
 
     # 2. Get stateB system
     # a. get the topology
-    stateB_topology, stateB_alchem_resids = _rfe_utils.topologyhelpers.combined_topology(
-        stateA_topology,
-        # zeroth item (there's only one) then get the OFF representation
-        off_small_mols['stateB'][0][1].to_topology().to_openmm(),
-        exclude_resids=comp_resids[mapping.componentA],
+    stateB_topology, stateB_alchem_resids = (
+        _rfe_utils.topologyhelpers.combined_topology(
+            stateA_topology,
+            # zeroth item (there's only one) then get the OFF representation
+            off_small_mols["stateB"][0][1].to_topology().to_openmm(),
+            exclude_resids=comp_resids[mapping.componentA],
+        )
     )
 
     # b. get a list of small molecules for stateB
     # Block out oechem backend in system_generator calls to avoid
     stateB_system = system_generator.create_system(
         stateB_topology,
-        molecules=[m for _, m in chain(off_small_mols['stateB'],
-                                       off_small_mols['both'])],
+        molecules=[
+            m for _, m in chain(off_small_mols["stateB"], off_small_mols["both"])
+        ],
     )
 
     #  c. Define correspondence mappings between the two systems
     ligand_mappings = _rfe_utils.topologyhelpers.get_system_mappings(
         mapping.componentA_to_componentB,
-        stateA_system, stateA_topology, comp_resids[mapping.componentA],
-        stateB_system, stateB_topology, stateB_alchem_resids,
+        stateA_system,
+        stateA_topology,
+        comp_resids[mapping.componentA],
+        stateB_system,
+        stateB_topology,
+        stateB_alchem_resids,
         # These are non-optional settings for this method
         fix_constraints=True,
     )
 
     #  e. Finally get the positions
     stateB_positions = _rfe_utils.topologyhelpers.set_and_check_new_positions(
-        ligand_mappings, stateA_topology, stateB_topology,
-        old_positions=ensure_quantity(stateA_positions, 'openmm'),
-        insert_positions=ensure_quantity(off_small_mols['stateB'][0][1].conformers[0], 'openmm'),
+        ligand_mappings,
+        stateA_topology,
+        stateB_topology,
+        old_positions=ensure_quantity(stateA_positions, "openmm"),
+        insert_positions=ensure_quantity(
+            off_small_mols["stateB"][0][1].conformers[0], "openmm"
+        ),
     )
     return DevelopmentHybridTopologyFactory(
         old_system=stateA_system,
@@ -133,8 +176,9 @@ def make_htf(mapping: LigandAtomMapping, settings, protein: ProteinComponent = N
         softcore_LJ_v2=True,
         softcore_LJ_v2_alpha=settings.alchemical_settings.softcore_alpha,
         interpolate_old_and_new_14s=settings.alchemical_settings.turn_off_core_unique_exceptions,
-        valence_correction_terms=corrections
+        valence_correction_terms=corrections,
     )
+
 
 def _find_dummy_junctions(htf: DevelopmentHybridTopologyFactory) -> dict:
     """Identify dummy-core atom junctions in the HTF and return a dictionary of their details."""
@@ -152,7 +196,6 @@ def _find_dummy_junctions(htf: DevelopmentHybridTopologyFactory) -> dict:
         bonded_atom_lookup[a1].add(a2)
         bonded_atom_lookup[a2].add(a1)
 
-
     def _collect_dummies(dummy_atoms: set[int], key: str):
         """Helper function to collect dummy-core junction atoms into the given key in junctions."""
         # track the number of junctions found
@@ -163,16 +206,24 @@ def _find_dummy_junctions(htf: DevelopmentHybridTopologyFactory) -> dict:
             # skip if already assigned as it is attached to the same core atom as another dummy
             if dummy_atom in assigned_dummies:
                 continue
-            bonded_physicals = [a for a in bonded_atom_lookup[dummy_atom] if a not in dummy_atoms]
+            bonded_physicals = [
+                a for a in bonded_atom_lookup[dummy_atom] if a not in dummy_atoms
+            ]
             # if there are no bonded physical atoms this is part of a larger dummy group so skip
             if len(bonded_physicals) == 0:
                 continue
             junction_atom = bonded_physicals[0]
-            other_dummies = [a for a in bonded_atom_lookup[junction_atom] if a in dummy_atoms and a != dummy_atom]
+            other_dummies = [
+                a
+                for a in bonded_atom_lookup[junction_atom]
+                if a in dummy_atoms and a != dummy_atom
+            ]
             junctions[key][junction_id] = {
                 "junction_atom": junction_atom,
                 "dummies": [dummy_atom] + other_dummies,
-                "physical": [a for a in bonded_atom_lookup[junction_atom] if a not in dummy_atoms],
+                "physical": [
+                    a for a in bonded_atom_lookup[junction_atom] if a not in dummy_atoms
+                ],
             }
             assigned_dummies.update(junctions[key][junction_id]["dummies"])
             junction_id += 1
@@ -182,7 +233,11 @@ def _find_dummy_junctions(htf: DevelopmentHybridTopologyFactory) -> dict:
     return junctions
 
 
-def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_factor: float = 0.1, scale_angles: bool = True) -> DevelopmentHybridTopologyFactory:
+def _scale_angles_and_torsions(
+    htf: DevelopmentHybridTopologyFactory,
+    scale_factor: float = 0.1,
+    scale_angles: bool = True,
+) -> DevelopmentHybridTopologyFactory:
     """
     Scale all angles and torsion force constants in the dummy-core junction by the given scale factor.
 
@@ -202,7 +257,9 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
     """
     assert 0 <= scale_factor <= 1, "Scale factor must be between 0 and 1."
 
-    logger.info(f"Softening angles and torsions involving dummy atoms in the hybrid system by {(1.0 - scale_factor) * 100}%.")
+    logger.info(
+        f"Softening angles and torsions involving dummy atoms in the hybrid system by {(1.0 - scale_factor) * 100}%."
+    )
     htf_softened = copy.deepcopy(htf)
     dummy_old_atoms = htf._atom_classes["unique_old_atoms"]
     dummy_new_atoms = htf._atom_classes["unique_new_atoms"]
@@ -228,7 +285,9 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
         forces_not_to_copy.remove("standard_angle_force")
     for force_name, hybrid_force in hybrid_forces.items():
         if force_name not in forces_not_to_copy:
-            logger.info(f"Copying force {force_name} to new hybrid system without modification.")
+            logger.info(
+                f"Copying force {force_name} to new hybrid system without modification."
+            )
             new_force = copy.deepcopy(hybrid_force)
             softened_hybrid_system.addForce(new_force)
 
@@ -238,7 +297,9 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
     softened_hybrid_system.addForce(softened_torsion_force)
 
     # get a quick lookup of the forces
-    new_hybrid_forces = {force.getName(): force for force in softened_hybrid_system.getForces()}
+    new_hybrid_forces = {
+        force.getName(): force for force in softened_hybrid_system.getForces()
+    }
 
     # process angles
     if scale_angles:
@@ -258,14 +319,22 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
                 # if we match a new unique atom the angle must be softened at lambda = 0
                 # add the term to the interpolated custom angle force
                 new_k = k * scale_factor
-                logger.info(f"Softening angle {angle} at lambda=0: original k = {k}, new k = {new_k}")
-                softened_custom_angle_force.addAngle(p1, p2, p3, [theta_eq, new_k, theta_eq, k])
+                logger.info(
+                    f"Softening angle {angle} at lambda=0: original k = {k}, new k = {new_k}"
+                )
+                softened_custom_angle_force.addAngle(
+                    p1, p2, p3, [theta_eq, new_k, theta_eq, k]
+                )
             elif 1 <= len(dummy_old_atoms.intersection(angle)) < 3:
                 # if we match an old unique atom the angle must be softened at lambda = 1
                 # add the term to the interpolated custom angle force
                 new_k = k * scale_factor
-                logger.info(f"Softening angle {angle} at lambda=1: original k = {k}, new k = {new_k}")
-                softened_custom_angle_force.addAngle(p1, p2, p3, [theta_eq, k, theta_eq, new_k])
+                logger.info(
+                    f"Softening angle {angle} at lambda=1: original k = {k}, new k = {new_k}"
+                )
+                softened_custom_angle_force.addAngle(
+                    p1, p2, p3, [theta_eq, k, theta_eq, new_k]
+                )
             else:
                 # the term does not involve any dummy atoms, so we can just copy it
                 softened_harmonic_angle_force.addAngle(p1, p2, p3, theta_eq, k)
@@ -276,7 +345,9 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
     default_hybrid_torsion_force = hybrid_forces["unique_atom_torsion_force"]
     softened_custom_torsion_force = new_hybrid_forces["CustomTorsionForce"]
     for i in range(default_hybrid_torsion_force.getNumTorsions()):
-        p1, p2, p3, p4, periodicity, phase, k = default_hybrid_torsion_force.getTorsionParameters(i)
+        p1, p2, p3, p4, periodicity, phase, k = (
+            default_hybrid_torsion_force.getTorsionParameters(i)
+        )
         torsion = (p1, p2, p3, p4)
         # for the torsion terms there must be at least one core atom and 1-3 dummy atoms
         # check lambda = 0 first
@@ -284,58 +355,40 @@ def _scale_angles_and_torsions(htf: DevelopmentHybridTopologyFactory, scale_fact
             # if we match a new unique atom the torsion must be softened at lambda = 0
             # add the term to the interpolated custom torsion force
             new_k = k * scale_factor
-            logger.info(f"Softening torsion {torsion} at lambda=0: original k = {k}, new k = {new_k}")
-            softened_custom_torsion_force.addTorsion(p1, p2, p3, p4,
-                                                     [periodicity, phase,
-                                            new_k, periodicity,
-                                             phase, k])
+            logger.info(
+                f"Softening torsion {torsion} at lambda=0: original k = {k}, new k = {new_k}"
+            )
+            softened_custom_torsion_force.addTorsion(
+                p1, p2, p3, p4, [periodicity, phase, new_k, periodicity, phase, k]
+            )
         elif 1 <= len(dummy_old_atoms.intersection(torsion)) < 4:
             # if we match an old unique atom the torsion must be softened at lambda = 1
             # add the term to the interpolated custom torsion force
             new_k = k * scale_factor
-            logger.info(f"Softening torsion {torsion} at lambda=1: original k = {k}, new k = {new_k}")
-            softened_custom_torsion_force.addTorsion(p1, p2, p3, p4,
-                                                     [periodicity, phase,
-                                            k, periodicity,
-                                             phase, new_k])
+            logger.info(
+                f"Softening torsion {torsion} at lambda=1: original k = {k}, new k = {new_k}"
+            )
+            softened_custom_torsion_force.addTorsion(
+                p1, p2, p3, p4, [periodicity, phase, k, periodicity, phase, new_k]
+            )
         else:
             # the term does not involve any dummy atoms, so we can just copy it
             softened_torsion_force.addTorsion(p1, p2, p3, p4, periodicity, phase, k)
 
     htf_softened._hybrid_system = softened_hybrid_system
     # set the hybrid system forces dict to the new one
-    htf_softened._hybrid_system_forces = {force.getName(): force for force in softened_hybrid_system.getForces()}
+    htf_softened._hybrid_system_forces = {
+        force.getName(): force for force in softened_hybrid_system.getForces()
+    }
     return htf_softened
 
 
-@dataclass
-class JunctionData:
-    junction_atom: int
-    dummies: set[int] = field(default_factory=set)
-    physical: set[int] = field(default_factory=set)
-
-@dataclass
-class CorrectionData:
-    removed_angles: set[frozenset[int]] = field(default_factory=set)
-    softened_angles: set[frozenset[int]] = field(default_factory=set)
-    stiffened_angles: set[frozenset[int]] = field(default_factory=set)
-    removed_dihedrals: set[frozenset[int]] = field(default_factory=set)
-    stiffened_dihedrals: set[frozenset[int]] = field(default_factory=set)
-    removed_impropers: set[frozenset[int]] = field(default_factory=set)
-    
-    def merge(self, other: "CorrectionData") -> "CorrectionData":
-        """Merge another CorrectionData object into this one."""
-        for f in fields(self):
-            current_set = getattr(self, f.name)
-            other_set = getattr(other, f.name)
-            current_set.update(other_set)
-        return self
-
-
-def _derive_dummy_junction_corrections(mapping: LigandAtomMapping, force_field: str) -> dict[str, CorrectionData]:
+def _derive_dummy_junction_corrections(
+    mapping: LigandAtomMapping, force_field: str
+) -> dict[str, CorrectionData]:
     """
     For the given mapping and SMIRNOFF style forcefield, derive dummy junction corrections based on the best practices of Fleck et al.
-    
+
     Parameters
     ----------
     mapping : LigandAtomMapping
@@ -352,10 +405,7 @@ def _derive_dummy_junction_corrections(mapping: LigandAtomMapping, force_field: 
     - Uses the single bond, angle, dihedral approach for each junction type
     - Improper torsions spanning the core-dummy junctions are only keep if they involve the chosen anchor atoms and dummies.
     """
-    all_corrections = {
-        "lambda_0": CorrectionData(),
-        "lambda_1": CorrectionData()
-    }
+    all_corrections = {"lambda_0": CorrectionData(), "lambda_1": CorrectionData()}
     # load the force field to label the molecules with parameters
     if not force_field.endswith(".offxml"):
         force_field = force_field + ".offxml"
@@ -375,7 +425,9 @@ def _derive_dummy_junction_corrections(mapping: LigandAtomMapping, force_field: 
         rdkit_mol = smc.to_openff().to_rdkit()
 
         # dummy atoms are all non-mapped atoms
-        dummy_atoms = {a.GetIdx() for a in rdkit_mol.GetAtoms() if a.GetIdx() not in core_atoms}
+        dummy_atoms = {
+            a.GetIdx() for a in rdkit_mol.GetAtoms() if a.GetIdx() not in core_atoms
+        }
         # label the molecule with parameters
         ff_labels = ff.label_molecules(smc.to_openff().to_topology())[0]
         # tag any free rotors in the molecule as we may need to stiffen torsions which end in the rotor group
@@ -390,23 +442,44 @@ def _derive_dummy_junction_corrections(mapping: LigandAtomMapping, force_field: 
             physicals = len(junction.physical)
             match physicals:
                 case 1:
-                    print(f"Deriving corrections for terminal junction with physical atom {junction.physical} and dummy atoms {junction.dummies}")
-                    corrections = _derive_terminal_corrections(junction, rdkit_mol, ff_labels, core_atoms, rotor_atoms)
+                    print(
+                        f"Deriving corrections for terminal junction with physical atom {junction.physical} and dummy atoms {junction.dummies}"
+                    )
+                    corrections = _derive_terminal_corrections(
+                        junction, rdkit_mol, ff_labels, core_atoms, rotor_atoms
+                    )
                     print(f"Derived corrections for terminal junction: {corrections}")
                 case 2:
-                    print(f"Deriving corrections for dual junction with physical atoms {junction.physical} and dummy atoms {junction.dummies}")
-                    corrections = _derive_dual_corrections(junction, rdkit_mol, ff_labels, core_atoms, rotor_atoms)
+                    print(
+                        f"Deriving corrections for dual junction with physical atoms {junction.physical} and dummy atoms {junction.dummies}"
+                    )
+                    corrections = _derive_dual_corrections(
+                        junction, rdkit_mol, ff_labels, core_atoms, rotor_atoms
+                    )
                     print(f"Derived corrections for dual junction: {corrections}")
                 case 3:
-                    print(f"Deriving corrections for triple junction with physical atoms {junction.physical} and dummy atoms {junction.dummies}")
-                    corrections = _derive_triple_corrections(junction, rdkit_mol, ff_labels, core_atoms)
+                    print(
+                        f"Deriving corrections for triple junction with physical atoms {junction.physical} and dummy atoms {junction.dummies}"
+                    )
+                    corrections = _derive_triple_corrections(
+                        junction, rdkit_mol, ff_labels, core_atoms
+                    )
                     print(f"Derived corrections for triple junctions: {corrections}")
                 case _:
-                    raise NotImplementedError(f"Higher order junctions not currently supported junction is order {physicals}.")
+                    raise NotImplementedError(
+                        f"Higher order junctions not currently supported junction is order {physicals}."
+                    )
 
             # validate the corrections
-            if not _check_dummy_junction(junction=junction, corrections=corrections, force_field_labels=ff_labels, core_atoms=core_atoms):
-                raise ValueError(f"Corrections failed validation for junction with physical atoms {junction.physical} and dummy atoms {junction.dummies}. Corrections were: {corrections}")
+            if not _check_dummy_junction(
+                junction=junction,
+                corrections=corrections,
+                force_field_labels=ff_labels,
+                core_atoms=core_atoms,
+            ):
+                raise ValueError(
+                    f"Corrections failed validation for junction with physical atoms {junction.physical} and dummy atoms {junction.dummies}. Corrections were: {corrections}"
+                )
             # add these corrections to the overall corrections dict
             all_corrections[state_key].merge(corrections)
 
@@ -416,21 +489,23 @@ def _derive_dummy_junction_corrections(mapping: LigandAtomMapping, force_field: 
     return all_corrections
 
 
-def _find_dummy_junctions_rdkit(rdkit_mol: Chem.Mol, dummy_atoms: set[int]) -> list[JunctionData]:
+def _find_dummy_junctions_rdkit(
+    rdkit_mol: Chem.Mol, dummy_atoms: set[int]
+) -> list[JunctionData]:
     """Identify dummy-core junctions in the given molecule for the set of dummy atoms extracted from an atom mapping.
-    
+
     Parameters
     ----------
     rdkit_mol : Chem.Mol
         The RDKit molecule object to find the dummy-core junctions for.
     dummy_atoms: set[int]
         The set of atom indices to be considered dummy atoms in the molecule (they are not mapped).
-        
+
     Returns
     -------
     list[JunctionData]
         A list of junction data dictionaries, each containing the junction atom index, the set of dummy atom indices, and the set of physical atom indices bonded to the junction atom.
-    
+
 
     Notes
     -----
@@ -463,12 +538,18 @@ def _find_dummy_junctions_rdkit(rdkit_mol: Chem.Mol, dummy_atoms: set[int]) -> l
         if any(junction_atom in ring and dummy_atom in ring for ring in atom_rings):
             continue
 
-        other_dummies = [a for a in bond_look_up[junction_atom] if a in dummy_atoms and a != dummy_atom]
+        other_dummies = [
+            a
+            for a in bond_look_up[junction_atom]
+            if a in dummy_atoms and a != dummy_atom
+        ]
         dummy_junctions.append(
             JunctionData(
                 junction_atom=junction_atom,
                 dummies={dummy_atom, *other_dummies},
-                physical={a for a in bond_look_up[junction_atom] if a not in dummy_atoms},
+                physical={
+                    a for a in bond_look_up[junction_atom] if a not in dummy_atoms
+                },
             )
         )
         assigned_dummies.update([dummy_atom] + other_dummies)
@@ -478,7 +559,7 @@ def _find_dummy_junctions_rdkit(rdkit_mol: Chem.Mol, dummy_atoms: set[int]) -> l
 def _find_free_rotors(rdkit_mol: Chem.Mol) -> set[int]:
     """
     Get the atom indices of any free rotor terminal atoms in the molecule.
-    
+
     Parameters
     ----------
     rdkit_mol : Chem.Mol
@@ -504,15 +585,22 @@ def _find_free_rotors(rdkit_mol: Chem.Mol) -> set[int]:
         matches = rdkit_mol.GetSubstructMatches(rotor_query)
         # get the terminal atom in each match and add to the set
         for match in matches:
-            terminal_atoms = [a for a in match if rdkit_mol.GetAtomWithIdx(a).GetDegree() == 1]
+            terminal_atoms = [
+                a for a in match if rdkit_mol.GetAtomWithIdx(a).GetDegree() == 1
+            ]
             rotor_indices.update(terminal_atoms)
     return rotor_indices
 
 
-def _get_heaviest_dihedral_anchor(dihedrals: Iterable[tuple[int, int, int, int]], excluded_atoms: set[int], rdkit_mol: Chem.Mol, junction_atom: int) -> int:
+def _get_heaviest_dihedral_anchor(
+    dihedrals: Iterable[tuple[int, int, int, int]],
+    excluded_atoms: set[int],
+    rdkit_mol: Chem.Mol,
+    junction_atom: int,
+) -> int:
     """
     Get the heaviest terminal atom from a list of dihedrals, excluding any atoms in the excluded_atoms set.
-    
+
     Parameters
     ----------
     dihedrals : Iterable[tuple[int, int, int, int]]
@@ -523,7 +611,7 @@ def _get_heaviest_dihedral_anchor(dihedrals: Iterable[tuple[int, int, int, int]]
         The RDKit molecule object to use for atom mass lookups.
     junction_atom : int
         The index of the junction atom in the molecule.
-        
+
     Returns
     -------
     int
@@ -531,7 +619,7 @@ def _get_heaviest_dihedral_anchor(dihedrals: Iterable[tuple[int, int, int, int]]
 
     Notes
     -----
-    - This is a deterministic method of finding the anchor atoms to ensure cancellation between repeats 
+    - This is a deterministic method of finding the anchor atoms to ensure cancellation between repeats
     - If the physical junction atom is planer and in a ring we target heavy atoms in the same ring to help with stiffened dihedrals
     """
     terminal_atoms_with_mass = []
@@ -542,9 +630,13 @@ def _get_heaviest_dihedral_anchor(dihedrals: Iterable[tuple[int, int, int, int]]
 
     # filter the terminal atoms list to end in a ring if the junction atom is in a ring
     # this helps with stiffened dihedrals
-    if len(terminal_atoms_with_mass) > 1 and rdkit_mol.GetAtomWithIdx(junction_atom).IsInRing():
+    if (
+        len(terminal_atoms_with_mass) > 1
+        and rdkit_mol.GetAtomWithIdx(junction_atom).IsInRing()
+    ):
         junction_rings = [
-            ring for ring in rdkit_mol.GetRingInfo().AtomRings()
+            ring
+            for ring in rdkit_mol.GetRingInfo().AtomRings()
             if junction_atom in ring
         ]
         terminal_atoms_with_mass = [
@@ -557,10 +649,16 @@ def _get_heaviest_dihedral_anchor(dihedrals: Iterable[tuple[int, int, int, int]]
     return max(terminal_atoms_with_mass, key=lambda x: (x[1], x[0]))[0]
 
 
-def _derive_terminal_corrections(junction: JunctionData, rdkit_mol: Chem.Mol, force_field_labels: dict[str, Any], core_atoms: set[int], free_rotors: set[int]) -> CorrectionData:
+def _derive_terminal_corrections(
+    junction: JunctionData,
+    rdkit_mol: Chem.Mol,
+    force_field_labels: dict[str, Any],
+    core_atoms: set[int],
+    free_rotors: set[int],
+) -> CorrectionData:
     """
     Derive the corrections for a terminal dummy junction as per the best practices of Fleck et al.
-    
+
     Parameters
     ----------
     junction : JunctionData
@@ -573,7 +671,7 @@ def _derive_terminal_corrections(junction: JunctionData, rdkit_mol: Chem.Mol, fo
         The set of core atom indices in the molecule.
     free_rotors : set[int]
         The set of free rotor terminal atom indices in the molecule.
-        
+
     Returns
     -------
     CorrectionData
@@ -609,28 +707,38 @@ def _derive_terminal_corrections(junction: JunctionData, rdkit_mol: Chem.Mol, fo
     # now we need to determine which dihedral to keep,
     # get the set of atoms to ignore when finding the terminal atom
     excluded_atoms = set(dummy_atoms) | set(physical_atoms) | {junction_atom}
-    heaviest_terminal_atom = _get_heaviest_dihedral_anchor(dihedrals=dummy_junction_dihedrals,
-                                                           excluded_atoms=excluded_atoms, rdkit_mol=rdkit_mol,
-                                                           junction_atom=junction_atom)
+    heaviest_terminal_atom = _get_heaviest_dihedral_anchor(
+        dihedrals=dummy_junction_dihedrals,
+        excluded_atoms=excluded_atoms,
+        rdkit_mol=rdkit_mol,
+        junction_atom=junction_atom,
+    )
     corrections = CorrectionData()
     # remove all dihedrals which do not terminate in the heaviest terminal atom
     for dihedral in dummy_junction_dihedrals:
         if heaviest_terminal_atom not in dihedral:
             corrections.removed_dihedrals.add(frozenset(dihedral))
-        elif heaviest_terminal_atom in dihedral and heaviest_terminal_atom in free_rotors:
+        elif (
+            heaviest_terminal_atom in dihedral and heaviest_terminal_atom in free_rotors
+        ):
             # if the dihedral terminates in a free rotor we stiffen the dihedral to
             # try and uncouple the dummy from the rapid rotations of the free rotor.
             corrections.stiffened_dihedrals.add(frozenset(dihedral))
 
     # check that we don't have multiple path dihedrals left in the system which can happen in 4 membered rings
     corrections = _prune_multiple_path_dihedrals(
-        target_dihedrals=dummy_junction_dihedrals,
-        corrections=corrections
+        target_dihedrals=dummy_junction_dihedrals, corrections=corrections
     )
     return corrections
 
 
-def _derive_dual_corrections(junction: JunctionData, rdkit_mol: Chem.Mol, force_field_labels: dict[str, Any], core_atoms: set[int], rotor_atoms: set[int]) -> CorrectionData:
+def _derive_dual_corrections(
+    junction: JunctionData,
+    rdkit_mol: Chem.Mol,
+    force_field_labels: dict[str, Any],
+    core_atoms: set[int],
+    rotor_atoms: set[int],
+) -> CorrectionData:
     """
     Derive the corrections for a dual dummy junction as per the best practices of Fleck et al.
 
@@ -664,7 +772,9 @@ def _derive_dual_corrections(junction: JunctionData, rdkit_mol: Chem.Mol, force_
         elif has_junction and has_dummy and has_physical and not has_other_core:
             # this could also be a dihedral linking two dummy groups - this requires the central atoms to be the core junction and a physical atom
             central_atoms = {dihedral[1], dihedral[2]}
-            if junction_atom in central_atoms and central_atoms.intersection(physical_atoms):
+            if junction_atom in central_atoms and central_atoms.intersection(
+                physical_atoms
+            ):
                 continue
             dummy_group_dihedrals.add(dihedral)
 
@@ -672,9 +782,12 @@ def _derive_dual_corrections(junction: JunctionData, rdkit_mol: Chem.Mol, force_
 
     # find the dihedral to terminate in by mass
     excluded_atoms = set(dummy_atoms) | set(physical_atoms) | {junction_atom}
-    heaviest_terminal_atom = _get_heaviest_dihedral_anchor(dihedrals=dummy_junction_dihedrals,
-                                                           excluded_atoms=excluded_atoms, rdkit_mol=rdkit_mol,
-                                                           junction_atom=junction_atom)
+    heaviest_terminal_atom = _get_heaviest_dihedral_anchor(
+        dihedrals=dummy_junction_dihedrals,
+        excluded_atoms=excluded_atoms,
+        rdkit_mol=rdkit_mol,
+        junction_atom=junction_atom,
+    )
 
     # we need to check if the junction is planar and if we need to stiffen the dihedral
     junction_hybridisation = rdkit_mol.GetAtomWithIdx(junction_atom).GetHybridization()
@@ -689,23 +802,31 @@ def _derive_dual_corrections(junction: JunctionData, rdkit_mol: Chem.Mol, force_
             corrections.removed_dihedrals.add(frozenset(dihedral))
         # we need to stiffen the dihedral if we want to keep the dummy group in plane with the rest of the molecule
         # or if we have to anchor using a free rotor
-        elif heaviest_terminal_atom in dihedral and (heaviest_terminal_atom in rotor_atoms):
-        # elif heaviest_terminal_atom in dihedral and (heaviest_terminal_atom in rotor_atoms or junction_is_planar): # disable dihedral stiffening for now
+        elif heaviest_terminal_atom in dihedral and (
+            heaviest_terminal_atom in rotor_atoms
+        ):
+            # elif heaviest_terminal_atom in dihedral and (heaviest_terminal_atom in rotor_atoms or junction_is_planar): # disable dihedral stiffening for now
             corrections.stiffened_dihedrals.add(frozenset(dihedral))
 
     # check that we don't have multiple path dihedrals left in the system which can happen in 4 membered rings
     corrections = _prune_multiple_path_dihedrals(
-        target_dihedrals=dummy_junction_dihedrals,
-        corrections=corrections
+        target_dihedrals=dummy_junction_dihedrals, corrections=corrections
     )
 
     # find the physical atom the kept dihedrals pass through
     heavy_atom = rdkit_mol.GetAtomWithIdx(heaviest_terminal_atom)
-    physical_atom_to_keep = [a.GetIdx() for a in heavy_atom.GetNeighbors() if a.GetIdx() in physical_atoms][0]
+    physical_atom_to_keep = [
+        a.GetIdx() for a in heavy_atom.GetNeighbors() if a.GetIdx() in physical_atoms
+    ][0]
 
     # remove redundant angles not running through the kept dihedral to minimise the number of phsycial anchor atoms
     for angle in force_field_labels["Angles"].keys():
-        if dummy_atoms.intersection(angle) and junction_atom in angle and physical_atoms.intersection(angle) and physical_atom_to_keep not in angle:
+        if (
+            dummy_atoms.intersection(angle)
+            and junction_atom in angle
+            and physical_atoms.intersection(angle)
+            and physical_atom_to_keep not in angle
+        ):
             # if the angle involves the junction atom, a dummy atom and a physical atom it might be redundant
             # dual junctions have two possible branches
             corrections.removed_angles.add(frozenset(angle))
@@ -721,7 +842,9 @@ def _derive_dual_corrections(junction: JunctionData, rdkit_mol: Chem.Mol, force_
     return corrections
 
 
-def _derive_triple_corrections(junction: JunctionData, rdkit_mol, force_field_labels, core_atoms) -> CorrectionData:
+def _derive_triple_corrections(
+    junction: JunctionData, rdkit_mol, force_field_labels, core_atoms
+) -> CorrectionData:
     """
     Derive the corrections for a triple dummy junction as per the best practices of Fleck et al.
 
@@ -757,12 +880,20 @@ def _derive_triple_corrections(junction: JunctionData, rdkit_mol, force_field_la
 
         # make sure we found 3 angles to soften as expected
         if len(corrections.softened_angles) != 3:
-            raise ValueError(f"Expected to find 3 angles to soften for a triple junction, but found {len(corrections.softened_angles)}. "
-                             f"Found the following softened angles: {corrections.softened_angles}")
+            raise ValueError(
+                f"Expected to find 3 angles to soften for a triple junction, but found {len(corrections.softened_angles)}. "
+                f"Found the following softened angles: {corrections.softened_angles}"
+            )
 
         # remove all dihedrals which terminate in the dummy junction atom and originate from the physical system
         # also catch any dihedrals which terminate in a physical atom and originate from within the dummy group
-        other_core_atoms = core_atoms - physical_atoms - {junction_atom, }
+        other_core_atoms = (
+            core_atoms
+            - physical_atoms
+            - {
+                junction_atom,
+            }
+        )
         dummy_group_dihedrals = set()
         for dihedral in force_field_labels["ProperTorsions"].keys():
             # classify the dihedral type
@@ -782,11 +913,16 @@ def _derive_triple_corrections(junction: JunctionData, rdkit_mol, force_field_la
         if dummy_group_dihedrals:
             # find the heaviest terminal atom to anchor dihedrals from the dummy group to
             # we expect this to be one of the physical atoms
-            all_dummies = {a.GetIdx() for a in rdkit_mol.GetAtoms() if a.GetIdx() not in core_atoms}
+            all_dummies = {
+                a.GetIdx() for a in rdkit_mol.GetAtoms() if a.GetIdx() not in core_atoms
+            }
             excluded_atoms = all_dummies | {junction_atom}
-            dummy_group_terminal_atom = _get_heaviest_dihedral_anchor(dihedrals=dummy_group_dihedrals,
-                                                                      excluded_atoms=excluded_atoms,
-                                                                      rdkit_mol=rdkit_mol, junction_atom=junction_atom)
+            dummy_group_terminal_atom = _get_heaviest_dihedral_anchor(
+                dihedrals=dummy_group_dihedrals,
+                excluded_atoms=excluded_atoms,
+                rdkit_mol=rdkit_mol,
+                junction_atom=junction_atom,
+            )
 
             # remove any dihedrals which do not terminate in this core atom
             for dihedral in dummy_group_dihedrals:
@@ -796,7 +932,9 @@ def _derive_triple_corrections(junction: JunctionData, rdkit_mol, force_field_la
     return corrections
 
 
-def _find_improper_corrections(junction: JunctionData, force_field_labels: dict[str, Any]) -> CorrectionData:
+def _find_improper_corrections(
+    junction: JunctionData, force_field_labels: dict[str, Any]
+) -> CorrectionData:
     """
     Find any improper torsions which need to be removed for a given junction.
 
@@ -812,12 +950,18 @@ def _find_improper_corrections(junction: JunctionData, force_field_labels: dict[
     # remove the junction atom from the core atoms as we want improper torsions only covering dummy and this atom
     for dihedral in force_field_labels["ImproperTorsions"].keys():
         # if the improper crosses the core dummy junction and involves a physical atom remove it
-        if physical_atoms.intersection(dihedral) and junction_atom in dihedral and dummy_atoms.intersection(dihedral):
+        if (
+            physical_atoms.intersection(dihedral)
+            and junction_atom in dihedral
+            and dummy_atoms.intersection(dihedral)
+        ):
             corrections.removed_impropers.add(frozenset(dihedral))
     return corrections
 
 
-def _prune_multiple_path_dihedrals(target_dihedrals: set[tuple[int, int, int, int]], corrections: CorrectionData) -> CorrectionData:
+def _prune_multiple_path_dihedrals(
+    target_dihedrals: set[tuple[int, int, int, int]], corrections: CorrectionData
+) -> CorrectionData:
     r"""
     For the given set of target dihedrals which have been processed prune any left over redundant dihedrals.
 
@@ -839,7 +983,10 @@ def _prune_multiple_path_dihedrals(target_dihedrals: set[tuple[int, int, int, in
 
     for dihedral in target_dihedrals:
         dihedral_fs = frozenset(dihedral)
-        if dihedral_fs not in corrections.removed_dihedrals and dihedral_fs not in corrections.stiffened_dihedrals:
+        if (
+            dihedral_fs not in corrections.removed_dihedrals
+            and dihedral_fs not in corrections.stiffened_dihedrals
+        ):
             dihedrals_by_terminals[frozenset([dihedral[0], dihedral[3]])].add(dihedral)
 
     for terminal_atoms, dihedrals in dihedrals_by_terminals.items():
@@ -852,7 +999,12 @@ def _prune_multiple_path_dihedrals(target_dihedrals: set[tuple[int, int, int, in
     return corrections
 
 
-def _check_dummy_junction(junction: JunctionData, corrections: CorrectionData, force_field_labels: dict[str, Any], core_atoms: set[int]) -> bool:
+def _check_dummy_junction(
+    junction: JunctionData,
+    corrections: CorrectionData,
+    force_field_labels: dict[str, Any],
+    core_atoms: set[int],
+) -> bool:
     """
     Check the dummy junction atom is correctly connected via only 3 or less non-redundant valence terms.
     """
@@ -892,14 +1044,25 @@ def _check_dummy_junction(junction: JunctionData, corrections: CorrectionData, f
             dummy_in_dihedral = dummy_atom in dihedral
             physical_in_dihedral = len(physical_atoms.intersection(dihedral)) == 1
             other_core_in_dihedral = len(other_core_atoms.intersection(dihedral)) == 1
-            if junction_in_dihedral and dummy_in_dihedral and physical_in_dihedral and other_core_in_dihedral:
+            if (
+                junction_in_dihedral
+                and dummy_in_dihedral
+                and physical_in_dihedral
+                and other_core_in_dihedral
+            ):
                 if dihedral not in corrections.removed_dihedrals:
                     valence_terms["dihedrals"].add(dihedral)
 
         # now we need to check the valence terms are correct
-        total_terms = len(valence_terms["bonds"]) + len(valence_terms["angles"]) + len(valence_terms["dihedrals"])
+        total_terms = (
+            len(valence_terms["bonds"])
+            + len(valence_terms["angles"])
+            + len(valence_terms["dihedrals"])
+        )
         # bond (1) + up to 3 softened angles is 4 valid connections
-        if total_terms == 4 and all(angle in corrections.softened_angles for angle in valence_terms["angles"]):
+        if total_terms == 4 and all(
+            angle in corrections.softened_angles for angle in valence_terms["angles"]
+        ):
             continue
         if total_terms > 3 or total_terms == 0:
             return False
@@ -907,7 +1070,12 @@ def _check_dummy_junction(junction: JunctionData, corrections: CorrectionData, f
     return True
 
 
-def _draw_dummy_corrections(mapping: LigandAtomMapping, corrections: dict[str, CorrectionData], output_dir: pathlib.Path, force_field: str) -> None:
+def _draw_dummy_corrections(
+    mapping: LigandAtomMapping,
+    corrections: dict[str, CorrectionData],
+    output_dir: pathlib.Path,
+    force_field: str,
+) -> None:
     """
     Draw the dummy junction corrections for each end state in the mapping and save to the output directory.
 
@@ -935,6 +1103,7 @@ def _draw_dummy_corrections(mapping: LigandAtomMapping, corrections: dict[str, C
     The output directory will be created if it does not exist
     """
     from rdkit.Chem import AllChem, Draw
+
     # define some atom colours
     core_atom_colour = (0.7, 1.0, 0.7)  # light green
     dummy_atom_colour = (0.5, 0.5, 0.5)  # light grey
@@ -945,22 +1114,32 @@ def _draw_dummy_corrections(mapping: LigandAtomMapping, corrections: dict[str, C
     ff = ForceField(force_field)
 
     # the corrections for each ligand are stored in the opposite end state
-    for ligand, state_index in zip([mapping.componentA, mapping.componentB], ["lambda_1", "lambda_0"]):
+    for ligand, state_index in zip(
+        [mapping.componentA, mapping.componentB], ["lambda_1", "lambda_0"]
+    ):
         correction_data = corrections[state_index]
         rdkit_mol = ligand.to_openff().to_rdkit()
         # get a 2D conformer for drawing
         AllChem.Compute2DCoords(rdkit_mol)
 
         # get the core atoms to highlight
-        core_atoms = set(mapping.componentA_to_componentB.keys() if state_index == "lambda_1" else mapping.componentA_to_componentB.values())
-        dummy_atoms = set([a.GetIdx() for a in rdkit_mol.GetAtoms() if a.GetIdx() not in core_atoms])
+        core_atoms = set(
+            mapping.componentA_to_componentB.keys()
+            if state_index == "lambda_1"
+            else mapping.componentA_to_componentB.values()
+        )
+        dummy_atoms = set(
+            [a.GetIdx() for a in rdkit_mol.GetAtoms() if a.GetIdx() not in core_atoms]
+        )
 
         # get the labels of the molecule to find the parameters for the valence terms
         ff_labels = ff.label_molecules(ligand.to_openff().to_topology())[0]
 
         # find the junctions of this end state
         print("finding junctions for ", ligand.name)
-        junctions = _find_dummy_junctions_rdkit(rdkit_mol=rdkit_mol, dummy_atoms=dummy_atoms)
+        junctions = _find_dummy_junctions_rdkit(
+            rdkit_mol=rdkit_mol, dummy_atoms=dummy_atoms
+        )
 
         # we want to group the terms by junction to make the drawing clearer
         to_draw_by_junction = defaultdict(list)
@@ -973,13 +1152,17 @@ def _draw_dummy_corrections(mapping: LigandAtomMapping, corrections: dict[str, C
             # through the junction
             for bond in ff_labels["Bonds"].keys():
                 bond_set = frozenset(bond)
-                if junction_atom in bond_set and any(dummy in bond_set for dummy in junction_dummies):
+                if junction_atom in bond_set and any(
+                    dummy in bond_set for dummy in junction_dummies
+                ):
                     # this is the bond crossing the junction
                     # find the index of the bond in the rdkit molecule
                     bond_idx = rdkit_mol.GetBondBetweenAtoms(bond[0], bond[1]).GetIdx()
 
                     # check if this could be a constraint, by checking for a H
-                    if any(rdkit_mol.GetAtomWithIdx(a).GetSymbol() == "H" for a in bond):
+                    if any(
+                        rdkit_mol.GetAtomWithIdx(a).GetSymbol() == "H" for a in bond
+                    ):
                         label = "Constraint"
                     else:
                         label = "Bond"
@@ -990,13 +1173,15 @@ def _draw_dummy_corrections(mapping: LigandAtomMapping, corrections: dict[str, C
                             "legend": label + " " + repr([int(x) for x in bond]),
                             "Bonds": [bond_idx],
                             "Bond Colours": {bond_idx: normal_term_colour},
-                            "Atoms": bond
+                            "Atoms": bond,
                         }
                     )
 
             for angle in ff_labels["Angles"].keys():
                 angle_set = frozenset(angle)
-                if junction_atom in angle_set and any(dummy in angle_set for dummy in junction_dummies):
+                if junction_atom in angle_set and any(
+                    dummy in angle_set for dummy in junction_dummies
+                ):
                     # this is an angle crossing the junction
                     # check if it has been removed, if removed just skip
                     if angle_set in correction_data.removed_angles:
@@ -1008,7 +1193,11 @@ def _draw_dummy_corrections(mapping: LigandAtomMapping, corrections: dict[str, C
                     bond1_idx = rdkit_mol.GetBondBetweenAtoms(p1, p2).GetIdx()
                     bond2_idx = rdkit_mol.GetBondBetweenAtoms(p2, p3).GetIdx()
                     # find the junction bond this should be stored under
-                    junction_bond = [atom for atom in angle if atom == junction_atom or atom in junction_dummies]
+                    junction_bond = [
+                        atom
+                        for atom in angle
+                        if atom == junction_atom or atom in junction_dummies
+                    ]
                     # this should always be 2 atoms unless it is a dummy only angle which spans a core atom
                     if len(junction_bond) == 3:
                         # this will always include the junction atom in this case as its the central atom of the bond
@@ -1034,14 +1223,19 @@ def _draw_dummy_corrections(mapping: LigandAtomMapping, corrections: dict[str, C
                         {
                             "legend": legend,
                             "Bonds": [bond1_idx, bond2_idx],
-                            "Bond Colours": {bond1_idx: bond_colour, bond2_idx: bond_colour},
-                            "Atoms": angle
+                            "Bond Colours": {
+                                bond1_idx: bond_colour,
+                                bond2_idx: bond_colour,
+                            },
+                            "Atoms": angle,
                         }
                     )
 
             for torsion in ff_labels["ProperTorsions"].keys():
                 torsion_set = frozenset(torsion)
-                if junction_atom in torsion_set and any(dummy in torsion_set for dummy in junction_dummies):
+                if junction_atom in torsion_set and any(
+                    dummy in torsion_set for dummy in junction_dummies
+                ):
                     # this is a dihedral crossing the junction
                     # check if it has been removed, if removed just skip
                     if torsion_set in correction_data.removed_dihedrals:
@@ -1054,13 +1248,21 @@ def _draw_dummy_corrections(mapping: LigandAtomMapping, corrections: dict[str, C
                     bond2_idx = rdkit_mol.GetBondBetweenAtoms(p2, p3).GetIdx()
                     bond3_idx = rdkit_mol.GetBondBetweenAtoms(p3, p4).GetIdx()
                     # find the junction bond this should be stored under
-                    junction_bond = [atom for atom in torsion if atom == junction_atom or atom in junction_dummies]
+                    junction_bond = [
+                        atom
+                        for atom in torsion
+                        if atom == junction_atom or atom in junction_dummies
+                    ]
                     # this should always be 2 atoms unless it is a torsion spanning two dummy groups
                     # in this case assign it to any
                     if len(junction_bond) != 2:
                         # make sure the extras are all dummies
-                        temp_bond = [atom for atom in junction_bond if atom in junction_dummies]
-                        assert set(junction_bond) - set(temp_bond) == {junction_atom}, f"Issue determining junction bond for torsion:{torsion} with dummies {junction_dummies} and junction atom:{junction_atom}"
+                        temp_bond = [
+                            atom for atom in junction_bond if atom in junction_dummies
+                        ]
+                        assert set(junction_bond) - set(temp_bond) == {
+                            junction_atom
+                        }, f"Issue determining junction bond for torsion:{torsion} with dummies {junction_dummies} and junction atom:{junction_atom}"
                         # select the junction atom and a dummy as the junction bond
                         # use a deterministic method
                         junction_bond = [sorted(temp_bond)[0], junction_atom]
@@ -1082,14 +1284,19 @@ def _draw_dummy_corrections(mapping: LigandAtomMapping, corrections: dict[str, C
                         {
                             "legend": legend,
                             "Bonds": [bond1_idx, bond2_idx, bond3_idx],
-                            "Bond Colours": {bond_idx: bond_colour for bond_idx in [bond1_idx, bond2_idx, bond3_idx]},
-                            "Atoms": torsion
+                            "Bond Colours": {
+                                bond_idx: bond_colour
+                                for bond_idx in [bond1_idx, bond2_idx, bond3_idx]
+                            },
+                            "Atoms": torsion,
                         }
                     )
 
             for improper in ff_labels["ImproperTorsions"].keys():
                 improper_set = frozenset(improper)
-                if junction_atom in improper_set and any(dummy in improper_set for dummy in junction_dummies):
+                if junction_atom in improper_set and any(
+                    dummy in improper_set for dummy in junction_dummies
+                ):
                     # this is an improper crossing the junction
                     # check if it has been removed, if removed just skip
                     if improper_set in correction_data.removed_impropers:
@@ -1102,8 +1309,11 @@ def _draw_dummy_corrections(mapping: LigandAtomMapping, corrections: dict[str, C
                     bond2_idx = rdkit_mol.GetBondBetweenAtoms(p2, p3).GetIdx()
                     bond3_idx = rdkit_mol.GetBondBetweenAtoms(p2, p4).GetIdx()
                     # find the junction bond this should be stored under
-                    junction_bond = [atom for atom in improper if atom == junction_atom or atom in junction_dummies]
-
+                    junction_bond = [
+                        atom
+                        for atom in improper
+                        if atom == junction_atom or atom in junction_dummies
+                    ]
 
                     junction_bond = frozenset(junction_bond)
 
@@ -1115,8 +1325,12 @@ def _draw_dummy_corrections(mapping: LigandAtomMapping, corrections: dict[str, C
                         {
                             "legend": legend,
                             "Bonds": [bond1_idx, bond2_idx, bond3_idx],
-                            "Bond Colours": {bond1_idx: normal_term_colour, bond2_idx: normal_term_colour, bond3_idx: normal_term_colour},
-                            "Atoms": improper
+                            "Bond Colours": {
+                                bond1_idx: normal_term_colour,
+                                bond2_idx: normal_term_colour,
+                                bond3_idx: normal_term_colour,
+                            },
+                            "Atoms": improper,
                         }
                     )
 
@@ -1130,9 +1344,13 @@ def _draw_dummy_corrections(mapping: LigandAtomMapping, corrections: dict[str, C
         legends = []
 
         # set up the atom colours
-        atom_to_color = {atom: core_atom_colour for atom in core_atoms}  # set the junction atom colour
+        atom_to_color = {
+            atom: core_atom_colour for atom in core_atoms
+        }  # set the junction atom colour
         for dummy in dummy_atoms:
-            atom_to_color[dummy] = dummy_atom_colour  # set the dummy atom colours on all dummies
+            atom_to_color[dummy] = (
+                dummy_atom_colour  # set the dummy atom colours on all dummies
+            )
 
         # add a copy of the molecule with the atoms involved in the term annotated with their map numbers
         # deduplicate by unqiue interactions, as repeats can happen when terms connect two dummy groups
