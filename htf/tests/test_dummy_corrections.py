@@ -358,6 +358,82 @@ def test_terminal_co_linear_tyk2_corrections(jmc_28_to_jmc_30_mapping, tmp_path)
     )
 
 
+def test_shp2_triple_junction_dummy_group_interaction_corrections(
+    shp2_099_1_ex7_to_ex9, tmp_path
+):
+    """Test corrections for a triple non-planar junction which also has interactions with a terminal junction near a ring (example-9)."""
+    corrections = _derive_dummy_junction_corrections(
+        shp2_099_1_ex7_to_ex9, "openff-2.0.0.offxml"
+    )
+    # start with the example-9 case
+    state_0 = corrections["lambda_0"]
+    # first check the blank corrections
+    assert not state_0.removed_impropers
+    assert not state_0.stiffened_angles
+    assert not state_0.stiffened_dihedrals
+    assert not state_0.removed_angles
+    # check softened angles should all involve the dummy atom 41
+    assert state_0.softened_angles == {
+        frozenset({41, 3, 4}),
+        frozenset({41, 3, 21}),
+        frozenset({41, 2, 3}),
+    }
+    # now check the removed dihedrals
+    assert state_0.removed_dihedrals == {
+        # all dihedrals terminating in 41 should be removed
+        frozenset({41, 3, 4, 27}),
+        frozenset({41, 3, 4, 26}),
+        frozenset({41, 3, 4, 5}),
+        frozenset({41, 3, 2, 24}),
+        frozenset({41, 3, 2, 25}),
+        frozenset({41, 3, 2, 1}),
+        # remove dual rotor constraints in the terminal group
+        frozenset({38, 21, 3, 2}),
+        frozenset({36, 21, 3, 2}),
+        frozenset({37, 21, 3, 2}),
+    }
+    # now check the other state which is a triple junction and a terminal group
+    state_1 = corrections["lambda_1"]
+    # check the blank corrections first
+    assert not state_1.removed_impropers
+    assert not state_1.stiffened_angles
+    assert not state_1.stiffened_dihedrals
+    assert not state_1.removed_angles
+    assert state_1.softened_angles == {
+        # all angles should terminate in the dummy atom 22
+        frozenset({22, 3, 4}),
+        frozenset({22, 3, 2}),
+        frozenset({22, 3, 21}),
+    }
+    assert state_1.removed_dihedrals == {
+        # all dihedrals terminating in 22 should be removed not coupled to the other dummy group
+        frozenset({22, 3, 2, 25}),
+        frozenset({22, 3, 2, 26}),
+        frozenset({22, 3, 2, 1}),
+        frozenset({22, 3, 4, 28}),
+        frozenset({22, 3, 4, 27}),
+        frozenset({22, 3, 4, 5}),
+        # dummy group 1 dual rotor constraints {39, 40, 41}
+        frozenset({39, 22, 3, 2}),
+        frozenset({39, 22, 3, 21}),
+        frozenset({40, 22, 3, 2}),
+        frozenset({40, 22, 3, 21}),
+        frozenset({41, 22, 3, 2}),
+        frozenset({41, 22, 3, 21}),
+        # dummy group 2 dual rotor constraints {42, 37, 38}
+        frozenset({37, 21, 3, 2}),
+        frozenset({38, 21, 3, 2}),
+        frozenset({42, 21, 3, 2}),
+    }
+    # draw the corrections
+    _draw_dummy_corrections(
+        mapping=shp2_099_1_ex7_to_ex9,
+        corrections=corrections,
+        force_field="openff-2.0.0.offxml",
+        output_dir=tmp_path / "shp2_ex7_to_ex9_corrections",
+    )
+
+
 def test_find_dummy_junctions_no_dummies(chloroethane_to_fluoroethane_mapping):
     """Make sure no dummy groups are found when we have a 1:1 mapping."""
     # check each end state

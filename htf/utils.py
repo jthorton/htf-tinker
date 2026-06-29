@@ -967,7 +967,14 @@ def _derive_triple_corrections(
                 corrections.removed_dihedrals.add(frozenset(dihedral))
             # if the dihedral originates from the dummy group and terminates in the physical atom we need to collect for
             # anchor corrections
-            elif has_dummy and has_junction and has_physical and not has_other_core:
+            # check if the dihedral originates from the dummy group but not the dummy junction atom
+            elif has_junction and has_dummy and has_physical and not has_other_core:
+                # this could also be a dihedral linking two dummy groups - this requires the central atoms to be the core junction and a physical atom
+                central_atoms = {dihedral[1], dihedral[2]}
+                if junction_atom in central_atoms and central_atoms.intersection(
+                    physical_atoms
+                ):
+                    continue
                 dummy_group_dihedrals.add(dihedral)
 
         if dummy_group_dihedrals:

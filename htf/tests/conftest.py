@@ -141,6 +141,18 @@ def tyk2_jmc_30():
 
 
 @pytest.fixture(scope="module")
+def shp2_shp099_1_example_7():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "shp2_shp099-1-example-7.sdf")
+
+
+@pytest.fixture(scope="module")
+def shp2_example_9():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "shp2_example-9.sdf")
+
+
+@pytest.fixture(scope="module")
 def chloroethane_to_fluoroethane_mapping(chloroethane, fluoroethane):
     """Return a mapping from chloroethane to fluoroethane."""
     return LigandAtomMapping(
@@ -537,6 +549,52 @@ def jmc_28_to_jmc_30_mapping(tyk2_jmc_28, tyk2_jmc_30):
             21: 21,
             22: 22,
             35: 34,
+        },
+    )
+
+
+@pytest.fixture(scope="module")
+def shp2_099_1_ex7_to_ex9(shp2_shp099_1_example_7, shp2_example_9):
+    return LigandAtomMapping(
+        componentA=shp2_shp099_1_example_7,
+        componentB=shp2_example_9,
+        componentA_to_componentB={
+            23: 29,
+            24: 28,
+            25: 27,
+            26: 26,
+            27: 25,
+            28: 24,
+            29: 23,
+            30: 22,
+            31: 30,
+            32: 35,
+            33: 31,
+            34: 32,
+            35: 34,
+            36: 33,
+            0: 0,
+            1: 5,
+            2: 4,
+            3: 3,
+            4: 2,
+            5: 1,
+            6: 6,
+            7: 7,
+            8: 8,
+            9: 9,
+            10: 10,
+            11: 11,
+            12: 12,
+            13: 13,
+            14: 14,
+            15: 15,
+            16: 16,
+            17: 17,
+            18: 18,
+            19: 19,
+            20: 20,
+            21: 21,
         },
     )
 
