@@ -14,7 +14,7 @@ import copy
 import logging
 from collections import defaultdict
 from rdkit import Chem
-from typing import Iterable, Any
+from typing import Iterable, Any, Dict
 from openff.toolkit import ForceField
 
 logger = logging.getLogger(__name__)
@@ -467,7 +467,8 @@ def _derive_dummy_junction_corrections(
     """
     all_corrections = {"lambda_0": CorrectionData(), "lambda_1": CorrectionData()}
     # load the force field to label the molecules with parameters
-    if not force_field.endswith(".offxml"):
+    if not force_field.startswith("<?xml") and not force_field.endswith(".offxml"):
+        # support loading in FF strings
         force_field = force_field + ".offxml"
     ff = ForceField(force_field)
 
@@ -526,9 +527,11 @@ def _derive_dummy_junction_corrections(
                     )
                     print(f"Derived corrections for triple junctions: {corrections}")
                 case _:
-                    raise NotImplementedError(
-                        f"Higher order junctions not currently supported junction is order {physicals}."
+                    print(f"Deriving corrections for higher order junction with physical atoms {junction.physical} and dummy atoms {junction.dummies}")
+                    corrections = _derive_higher_order_corrections(
+                        junction, rdkit_mol, ff_labels, core_atoms
                     )
+                    print(f"Derived corrections for higher order junctions: {corrections}")
 
             # validate the corrections
             if not _check_dummy_junction(
@@ -929,21 +932,21 @@ def _derive_triple_corrections(
         raise NotImplementedError("Planar triple junctions not supported")
     else:
         print("Junction is non-planar, applying non-planar junction corrections.")
-        # first we need to find the three angles to soften
-        for angle in force_field_labels["Angles"].keys():
-            has_junction_a = junction_atom in angle
-            # we only want a single dummy atom in the angle
-            has_dummy_a = len(dummy_atoms.intersection(angle)) == 1
-            has_physical_a = len(physical_atoms.intersection(angle)) == 1
-            if has_junction_a and has_dummy_a and has_physical_a:
-                corrections.softened_angles.add(frozenset(angle))
-
-        # make sure we found 3 angles to soften as expected
-        if len(corrections.softened_angles) != 3:
-            raise ValueError(
-                f"Expected to find 3 angles to soften for a triple junction, but found {len(corrections.softened_angles)}. "
-                f"Found the following softened angles: {corrections.softened_angles}"
-            )
+        # # first we need to find the three angles to soften
+        # for angle in force_field_labels["Angles"].keys():
+        #     has_junction_a = junction_atom in angle
+        #     # we only want a single dummy atom in the angle
+        #     has_dummy_a = len(dummy_atoms.intersection(angle)) == 1
+        #     has_physical_a = len(physical_atoms.intersection(angle)) == 1
+        #     if has_junction_a and has_dummy_a and has_physical_a:
+        #         corrections.softened_angles.add(frozenset(angle))
+        #
+        # # make sure we found 3 angles to soften per dummy atom at the junction
+        # if len(corrections.softened_angles) != 3 * len(dummy_atoms):
+        #     raise ValueError(
+        #         f"Expected to find 3 angles to soften for a triple junction, but found {len(corrections.softened_angles)}. "
+        #         f"Found the following softened angles: {corrections.softened_angles}"
+        #     )
 
         # remove all dihedrals which terminate in the dummy junction atom and originate from the physical system
         # also catch any dihedrals which terminate in a physical atom and originate from within the dummy group
@@ -997,6 +1000,96 @@ def _derive_triple_corrections(
                     corrections.removed_dihedrals.add(frozenset(dihedral))
 
     return corrections
+
+
+def _derive_higher_order_corrections(
+    junction: JunctionData,
+    rdkit_mol: Chem.Mol,
+    force_field_labels: Dict[str, Any],
+    core_atoms: set[int]
+)-> CorrectionData:
+    """Derive higher order corrections using the best practices from Fleck et al.
+
+    Notes
+    -----
+    - We remove redundant physical atoms from the junction until we can pass to the triple junction function.
+    - Atoms retained should be able to support a dihedral anchor if required
+    """
+    corrections = CorrectionData()
+    junction_atom = junction.junction_atom
+    physical_atoms = junction.physical
+    dummy_atoms = junction.dummies
+
+    # track the physical atoms which could support a dihedral anchor
+    physicals_to_keep = set()
+    other_core_atoms = core_atoms - physical_atoms - {junction_atom}
+    print(force_field_labels)
+    for dihedral in force_field_labels["ProperTorsions"].keys():
+        # do checks to classify the dihedral
+        has_junction = junction_atom in dihedral
+        has_dummy = dummy_atoms.intersection(dihedral)
+        has_physical = physical_atoms.intersection(dihedral)
+        has_other_core = other_core_atoms.intersection(dihedral)
+
+        if has_junction and has_dummy and has_physical and has_other_core:
+            physicals_to_keep.update(physical_atoms.intersection(dihedral))
+
+    # keep the first 3 physical atoms that can support an anchor
+    new_physical_atoms = physicals_to_keep.intersection(physical_atoms)
+    print(f"Found physical atoms which support a dihedral anchor {new_physical_atoms}")
+    if len(new_physical_atoms) > 3:
+        print("Filtering higher order physical atoms")
+        # deterministically remove extra atoms
+        new_physical_atoms = set(sorted(new_physical_atoms)[:3])
+    elif len(new_physical_atoms) < 3:
+        print(f"Padding higher order physical atoms")
+        # add the junction physical atoms to the list till we hit length 3 in a deterministic way
+        new_physical_atoms = new_physical_atoms.union(set(sorted(physical_atoms)[:3-len(new_physical_atoms)]))
+
+    # the removed physical atoms
+    removed_physical_atoms = physical_atoms - new_physical_atoms
+    print(f"Redundant physical atoms {removed_physical_atoms}")
+    # we now need to remove all angles which couple the removed physical atoms to the dummies at this junction
+    for angle in force_field_labels["Angles"].keys():
+        # classify the angle
+        has_junction_a = junction_atom in angle
+        has_dummy_a = dummy_atoms.intersection(angle)
+        has_removed_phys = removed_physical_atoms.intersection(angle)
+
+        if has_junction_a and has_dummy_a and has_removed_phys:
+            corrections.removed_angles.add(frozenset(angle))
+    print(f"Redundant angles removed {corrections.removed_angles}")
+
+    # now we need to remove all dihedrals which involve a dummy atom and pass through the removed physical atoms
+    # this includes dummy junction and dummy group anchors
+    for dihedral in force_field_labels["ProperTorsions"].keys():
+        has_junction = junction_atom in dihedral
+        has_dummy = dummy_atoms.intersection(dihedral)
+        has_removed_phys = removed_physical_atoms.intersection(dihedral)
+
+        if has_junction and has_dummy and has_removed_phys:
+            corrections.removed_dihedrals.add(frozenset(dihedral))
+
+    print(f"Redundant dihedrals removed {corrections.removed_dihedrals}")
+
+    # make the new junction and pass it to the triple connection function
+    new_junction = JunctionData(
+        junction_atom=junction_atom,
+        dummies=dummy_atoms,
+        physical=new_physical_atoms,
+    )
+    print(f"Higher order junction reduced to {new_junction}")
+    triple_corrections = _derive_triple_corrections(
+        new_junction,
+        rdkit_mol,
+        force_field_labels,
+        core_atoms
+    )
+    # merge the corrections
+    corrections.merge(triple_corrections)
+    return corrections
+
+
 
 
 def _find_improper_corrections(
@@ -1127,9 +1220,8 @@ def _check_dummy_junction(
             + len(valence_terms["dihedrals"])
         )
         # bond (1) + up to 3 softened angles is 4 valid connections
-        if total_terms == 4 and all(
-            angle in corrections.softened_angles for angle in valence_terms["angles"]
-        ):
+        #
+        if total_terms == 4 and len(valence_terms["angles"]) == 3:
             continue
         if total_terms > 3 or total_terms == 0:
             return False

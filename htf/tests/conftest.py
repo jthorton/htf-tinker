@@ -91,6 +91,23 @@ def isoquinoline():
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "isoquinoline.sdf")
 
+@pytest.fixture(scope="module")
+def sulfur_hexafluoride():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "sulfur_hexafluoride.sdf")
+
+
+@pytest.fixture(scope="module")
+def tetrafluoride():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "tetrafluoride.sdf")
+
+
+@pytest.fixture(scope="module")
+def pentafluorosulfanylbenzene():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "pentafluorosulfanylbenzene.sdf")
+
 
 @pytest.fixture(scope="module")
 def tyk2_ejm_50():
@@ -299,6 +316,25 @@ def propane_to_chloroethane(propane, chloroethane):
             1: 2,
             5: 0,
         },
+    )
+
+
+@pytest.fixture(scope="module")
+def sulfur_hexafluoride_to_tetrafluoride_mapping(sulfur_hexafluoride, tetrafluoride):
+    """Return a mapping from sulfur hexafluoride to tetrafluoride, generated with Lomap2D"""
+    return LigandAtomMapping(
+        componentA=sulfur_hexafluoride,
+        componentB=tetrafluoride,
+        componentA_to_componentB={0: 4, 1: 1, 2: 3, 4: 0, 5: 2}
+    )
+
+
+@pytest.fixture(scope="module")
+def pentafluorosulfanylbenzene_to_sulfur_hexafluoride_mapping(pentafluorosulfanylbenzene, sulfur_hexafluoride):
+    return LigandAtomMapping(
+        componentA=pentafluorosulfanylbenzene,
+        componentB=sulfur_hexafluoride,
+        componentA_to_componentB={6: 1, 7: 2, 8: 6, 9: 0, 10: 4, 11: 3}
     )
 
 

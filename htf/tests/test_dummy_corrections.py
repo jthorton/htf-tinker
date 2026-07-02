@@ -434,6 +434,90 @@ def test_shp2_triple_junction_dummy_group_interaction_corrections(
     )
 
 
+def test_higher_order_corrections(sulfur_hexafluoride_to_tetrafluoride_mapping):
+    """Test finding higher order corrections using hexafluoride to tetrafluoride as an example."""
+    from openff.toolkit import ForceField
+    # patch the force field with a dummy parameter for sulfur hexafluoride
+    ff = ForceField("openff-2.0.0.offxml")
+    angle_handler = ff.get_parameter_handler("Angles")
+    angle_handler.add_parameter(
+        {
+            "smirks": "[#9:1]-[#16:2]-[#9:3]",
+            "angle": 90 * offunit.degree,
+            "k": 100 * offunit.kilocalorie_per_mole / offunit.radian ** 2,
+        },
+        before=0
+    )
+    corrections = _derive_dummy_junction_corrections(sulfur_hexafluoride_to_tetrafluoride_mapping, ff.to_string())
+    # check the tetrafluoride case first this should be blank
+    state_0 = corrections["lambda_0"]
+    assert not state_0.removed_impropers
+    assert not state_0.stiffened_angles
+    assert not state_0.stiffened_dihedrals
+    assert not state_0.removed_angles
+    assert not state_0.softened_angles
+    assert not state_0.removed_dihedrals
+
+    # now check the sulfur hexafluoride end which should be the higher order junction
+    state_1 = corrections["lambda_1"]
+    # check the blank terms first
+    assert not state_1.removed_impropers
+    assert not state_1.stiffened_angles
+    assert not state_1.stiffened_dihedrals
+    assert not state_1.removed_dihedrals
+    # check that there are 2 removed redundant angles done by the higher order function
+    # should involve the dummy atoms {3, 6}
+    assert state_1.removed_angles == {
+        frozenset({1, 3, 5}), # dummy atom 1
+        frozenset({1, 5, 6}), # dummy atom 2
+    }
+    # there should be 6 softened angles related to the 2 dummy atoms done by the triple correction
+    assert state_1.softened_angles == {
+        frozenset({1, 2, 3}), # dummy atom 1
+        frozenset({0, 1, 3}),
+        frozenset({1, 3, 4}),
+        frozenset({1, 2, 6}), # dummy atom 2
+        frozenset({0, 1, 6}),
+        frozenset({1, 4, 6})
+    }
+    # draw the corrections
+    _draw_dummy_corrections(
+        mapping=sulfur_hexafluoride_to_tetrafluoride_mapping,
+        corrections=corrections,
+        force_field=ff.to_string(),
+        output_dir=pathlib.Path("sulfur_hexafluoride_corrections"),
+    )
+
+
+# def test_higher_order_group_corrections(pentafluorosulfanylbenzene_to_sulfur_hexafluoride_mapping):
+#     from openff.toolkit import ForceField
+#     # patch the force field with a dummy parameter for sulfur hexafluoride
+#     ff = ForceField("openff-2.0.0.offxml")
+#     angle_handler = ff.get_parameter_handler("Angles")
+#     angle_handler.add_parameter(
+#         {
+#             # fake angle for the F-S-F/C angles
+#             "smirks": "[#9:1]-[#16:2]-[*:3]",
+#             "angle": 90 * offunit.degree,
+#             "k": 100 * offunit.kilocalorie_per_mole / offunit.radian ** 2,
+#         },
+#         before=0
+#     )
+#     proper_handler = ff.get_parameter_handler("ProperTorsions")
+#     proper_handler.add_parameter(
+#         {
+#             # fake proper torsion for the F-S-C-C torsions
+#             "smirks": "[#9:1]-[#16:2]-[*:3]-[*:4]",
+#             "phase": [0.0 * offunit.degree],
+#             "periodicity":  [1,],
+#             "k": [1 * offunit.kilocalorie_per_mole],
+#         },
+#         before=0
+#     )
+#     corrections = _derive_dummy_junction_corrections(pentafluorosulfanylbenzene_to_sulfur_hexafluoride_mapping, ff.to_string())
+#     print(corrections)
+
+
 def test_find_dummy_junctions_no_dummies(chloroethane_to_fluoroethane_mapping):
     """Make sure no dummy groups are found when we have a 1:1 mapping."""
     # check each end state

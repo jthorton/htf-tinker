@@ -88,7 +88,7 @@ class HybridTopologyFactory:
                  softcore_alpha=0.5,
                  softcore_LJ_v2=True,
                  softcore_LJ_v2_alpha=0.85,
-                 interpolate_old_and_new_14s=False,
+                 interpolate_old_and_new_14s=True,
                  valence_correction_terms=None,
                  # default values for the correction terms in openmm units
                  stiffened_k_correction = 100 * unit.kilocalories_per_mole,
