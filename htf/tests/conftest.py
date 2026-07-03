@@ -177,6 +177,17 @@ def shp2_example_9():
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "shp2_example-9.sdf")
 
+@pytest.fixture(scope="module")
+def hif2a_155():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "hif2a_155.sdf")
+
+
+@pytest.fixture(scope="module")
+def hif2a_231():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "hif2a_231.sdf")
+
 
 @pytest.fixture(scope="module")
 def chloroethane_to_fluoroethane_mapping(chloroethane, fluoroethane):
@@ -688,6 +699,14 @@ def shp2_099_1_ex7_to_ex9(shp2_shp099_1_example_7, shp2_example_9):
             20: 20,
             21: 21,
         },
+    )
+
+@pytest.fixture(scope="module")
+def hif2a_155_to_231_mapping(hif2a_155, hif2a_231):
+    return LigandAtomMapping(
+        componentA=hif2a_155,
+        componentB=hif2a_231,
+        componentA_to_componentB={26: 25, 27: 26, 28: 27, 30: 29, 32: 30, 33: 31, 34: 32, 35: 33, 36: 34, 37: 35, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 15, 15: 16, 16: 17, 17: 18, 18: 19, 19: 20, 20: 21, 21: 22, 24: 24, 25: 14}
     )
 
 

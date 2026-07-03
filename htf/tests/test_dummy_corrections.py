@@ -419,6 +419,19 @@ def test_tyk2_triple_junction_cyclopropane_corrections(
     )
 
 
+def test_triple_junction_interactions_hif2a(hif2a_155_to_231_mapping):
+    """Test removing triple junction dihedrals between dummy groups."""
+    correction = _derive_dummy_junction_corrections(hif2a_155_to_231_mapping, "openff-2.0.0.offxml")
+    print(correction)
+    _draw_dummy_corrections(
+        mapping=hif2a_155_to_231_mapping,
+        corrections=correction,
+        force_field="openff-2.0.0.offxml",
+        output_dir=pathlib.Path("hif2a_155_to_231_corrections"),
+    )
+
+
+
 def test_shp2_triple_junction_dummy_group_interaction_corrections(
     shp2_099_1_ex7_to_ex9, tmp_path
 ):
@@ -426,6 +439,7 @@ def test_shp2_triple_junction_dummy_group_interaction_corrections(
     corrections = _derive_dummy_junction_corrections(
         shp2_099_1_ex7_to_ex9, "openff-2.0.0.offxml"
     )
+    print(corrections)
     # start with the example-9 case
     state_0 = corrections["lambda_0"]
     # first check the blank corrections
@@ -491,7 +505,7 @@ def test_shp2_triple_junction_dummy_group_interaction_corrections(
         mapping=shp2_099_1_ex7_to_ex9,
         corrections=corrections,
         force_field="openff-2.0.0.offxml",
-        output_dir=tmp_path / "shp2_ex7_to_ex9_corrections",
+        output_dir=pathlib.Path("shp2_ex7_to_ex9_corrections"),
     )
 
 

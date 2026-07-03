@@ -969,25 +969,16 @@ def _derive_triple_corrections(
             has_physical = physical_atoms.intersection(dihedral)
             has_other_core = other_core_atoms.intersection(dihedral)
 
-            # if the dihedral originates from the physical and terminates in the dummy junction we need to remove
-            # len(has_physical) == 2 is a special case where the tiple junction is on a cyclopropane group
-            if (
-                has_dummy
-                and has_physical
-                and has_junction
-                and (has_other_core or len(has_physical) == 2)
-            ):
+            # we need to remove all dihedrals which originate from the dummy junction atom and pass through the junction
+            term_junction_1 = {*dihedral[:2]}
+            term_junction_2 = {*dihedral[2:]}
+            central_atoms = {*dihedral[1:3]}
+            if (junction_atom in term_junction_1 and term_junction_1.intersection(dummy_atoms)) or (junction_atom in term_junction_2 and term_junction_2.intersection(dummy_atoms)):
                 corrections.removed_dihedrals.add(frozenset(dihedral))
             # if the dihedral originates from the dummy group and terminates in the physical atom we need to collect for
-            # anchor corrections
-            # check if the dihedral originates from the dummy group but not the dummy junction atom
-            elif has_junction and has_dummy and has_physical and not has_other_core:
-                # this could also be a dihedral linking two dummy groups - this requires the central atoms to be the core junction and a physical atom
-                central_atoms = {dihedral[1], dihedral[2]}
-                if junction_atom in central_atoms and central_atoms.intersection(
-                    physical_atoms
-                ):
-                    continue
+            # anchor corrections this will have the dummy core junction as the central bond
+            # if we have more than 1 dummy atom from the junction in the bond it links two groups on the same junction and should be skipped
+            elif junction_atom in central_atoms and central_atoms.intersection(dummy_atoms) and len(has_dummy) == 1:
                 dummy_group_dihedrals.add(dihedral)
 
         if dummy_group_dihedrals:
