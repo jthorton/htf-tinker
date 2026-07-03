@@ -358,6 +358,67 @@ def test_terminal_co_linear_tyk2_corrections(jmc_28_to_jmc_30_mapping, tmp_path)
     )
 
 
+def test_tyk2_triple_junction_cyclopropane_corrections(
+    jmc_30_to_ejm_46_mapping, tmp_path
+):
+    """Make sure we correctly prune dummy junction anchors in 3 membered rings with multiple possible ways around the ring."""
+    corrections = _derive_dummy_junction_corrections(
+        jmc_30_to_ejm_46_mapping, "openff-2.0.0.offxml"
+    )
+    # check ejm_30 and make sure that all dihedrals in the cyclopropane group are removed
+    state_1 = corrections["lambda_1"]
+    # check the blank terms first
+    assert not state_1.stiffened_dihedrals
+    assert not state_1.removed_impropers
+    assert not state_1.stiffened_angles
+    assert not state_1.removed_angles
+    # check the 3 softened angles which should involve dummy atom 34
+    assert state_1.softened_angles == {
+        frozenset({34, 19, 21}),
+        frozenset({34, 36, 21}),
+        frozenset({34, 20, 21}),
+    }
+    assert state_1.removed_dihedrals == {
+        # dummy anchor dihedrals must all be removed terminating in 34
+        frozenset({34, 19, 20, 21}),
+        frozenset({34, 19, 21, 31}),
+        frozenset({32, 34, 20, 21}),
+        frozenset({33, 34, 20, 21}),
+        frozenset({17, 34, 19, 21}),
+        frozenset({35, 34, 19, 21}),  # remove the dummy group rotor constraints
+        frozenset({34, 35, 36, 21}),
+    }
+    # check the ejm_46 corrections which a slightly simpler
+    state_0 = corrections["lambda_0"]
+    # check the blank corrections
+    assert not state_0.stiffened_dihedrals
+    assert not state_0.removed_impropers
+    assert not state_0.stiffened_angles
+    assert not state_0.removed_angles
+    # check the 3 softened angles which should involve dummy atom 35
+    assert state_0.softened_angles == {
+        frozenset({35, 20, 21}),
+        frozenset({34, 35, 21}),
+        frozenset({35, 19, 21}),
+    }
+    assert state_0.removed_dihedrals == {
+        # remove all possible torsions terminating in 35
+        # there are 6 possible but 2 involve the same atoms in opposite directions around the ring so we
+        # have just 5 entries
+        frozenset({35, 19, 21, 31}),
+        frozenset({35, 19, 20, 21}),
+        frozenset({33, 35, 20, 21}),
+        frozenset({32, 35, 20, 21}),
+        frozenset({17, 19, 21, 35}),
+    }
+    _draw_dummy_corrections(
+        mapping=jmc_30_to_ejm_46_mapping,
+        corrections=corrections,
+        force_field="openff-2.0.0.offxml",
+        output_dir=tmp_path / "jmc_30_to_ejm_46_corrections",
+    )
+
+
 def test_shp2_triple_junction_dummy_group_interaction_corrections(
     shp2_099_1_ex7_to_ex9, tmp_path
 ):
@@ -437,6 +498,7 @@ def test_shp2_triple_junction_dummy_group_interaction_corrections(
 def test_higher_order_corrections(sulfur_hexafluoride_to_tetrafluoride_mapping):
     """Test finding higher order corrections using hexafluoride to tetrafluoride as an example."""
     from openff.toolkit import ForceField
+
     # patch the force field with a dummy parameter for sulfur hexafluoride
     ff = ForceField("openff-2.0.0.offxml")
     angle_handler = ff.get_parameter_handler("Angles")
@@ -444,11 +506,13 @@ def test_higher_order_corrections(sulfur_hexafluoride_to_tetrafluoride_mapping):
         {
             "smirks": "[#9:1]-[#16:2]-[#9:3]",
             "angle": 90 * offunit.degree,
-            "k": 100 * offunit.kilocalorie_per_mole / offunit.radian ** 2,
+            "k": 100 * offunit.kilocalorie_per_mole / offunit.radian**2,
         },
-        before=0
+        before=0,
     )
-    corrections = _derive_dummy_junction_corrections(sulfur_hexafluoride_to_tetrafluoride_mapping, ff.to_string())
+    corrections = _derive_dummy_junction_corrections(
+        sulfur_hexafluoride_to_tetrafluoride_mapping, ff.to_string()
+    )
     # check the tetrafluoride case first this should be blank
     state_0 = corrections["lambda_0"]
     assert not state_0.removed_impropers
@@ -468,17 +532,17 @@ def test_higher_order_corrections(sulfur_hexafluoride_to_tetrafluoride_mapping):
     # check that there are 2 removed redundant angles done by the higher order function
     # should involve the dummy atoms {3, 6}
     assert state_1.removed_angles == {
-        frozenset({1, 3, 5}), # dummy atom 1
-        frozenset({1, 5, 6}), # dummy atom 2
+        frozenset({1, 3, 5}),  # dummy atom 1
+        frozenset({1, 5, 6}),  # dummy atom 2
     }
     # there should be 6 softened angles related to the 2 dummy atoms done by the triple correction
     assert state_1.softened_angles == {
-        frozenset({1, 2, 3}), # dummy atom 1
+        frozenset({1, 2, 3}),  # dummy atom 1
         frozenset({0, 1, 3}),
         frozenset({1, 3, 4}),
-        frozenset({1, 2, 6}), # dummy atom 2
+        frozenset({1, 2, 6}),  # dummy atom 2
         frozenset({0, 1, 6}),
-        frozenset({1, 4, 6})
+        frozenset({1, 4, 6}),
     }
     # draw the corrections
     _draw_dummy_corrections(

@@ -91,6 +91,7 @@ def isoquinoline():
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "isoquinoline.sdf")
 
+
 @pytest.fixture(scope="module")
 def sulfur_hexafluoride():
     with resources.files("htf.tests.data") as f:
@@ -106,7 +107,9 @@ def tetrafluoride():
 @pytest.fixture(scope="module")
 def pentafluorosulfanylbenzene():
     with resources.files("htf.tests.data") as f:
-        return SmallMoleculeComponent.from_sdf_file(f / "pentafluorosulfanylbenzene.sdf")
+        return SmallMoleculeComponent.from_sdf_file(
+            f / "pentafluorosulfanylbenzene.sdf"
+        )
 
 
 @pytest.fixture(scope="module")
@@ -155,6 +158,12 @@ def tyk2_jmc_28():
 def tyk2_jmc_30():
     with resources.files("htf.tests.data") as f:
         return SmallMoleculeComponent.from_sdf_file(f / "tyk2_jmc_30.sdf")
+
+
+@pytest.fixture(scope="module")
+def tyk2_ejm_46():
+    with resources.files("htf.tests.data") as f:
+        return SmallMoleculeComponent.from_sdf_file(f / "tyk2_ejm_46.sdf")
 
 
 @pytest.fixture(scope="module")
@@ -325,16 +334,18 @@ def sulfur_hexafluoride_to_tetrafluoride_mapping(sulfur_hexafluoride, tetrafluor
     return LigandAtomMapping(
         componentA=sulfur_hexafluoride,
         componentB=tetrafluoride,
-        componentA_to_componentB={0: 4, 1: 1, 2: 3, 4: 0, 5: 2}
+        componentA_to_componentB={0: 4, 1: 1, 2: 3, 4: 0, 5: 2},
     )
 
 
 @pytest.fixture(scope="module")
-def pentafluorosulfanylbenzene_to_sulfur_hexafluoride_mapping(pentafluorosulfanylbenzene, sulfur_hexafluoride):
+def pentafluorosulfanylbenzene_to_sulfur_hexafluoride_mapping(
+    pentafluorosulfanylbenzene, sulfur_hexafluoride
+):
     return LigandAtomMapping(
         componentA=pentafluorosulfanylbenzene,
         componentB=sulfur_hexafluoride,
-        componentA_to_componentB={6: 1, 7: 2, 8: 6, 9: 0, 10: 4, 11: 3}
+        componentA_to_componentB={6: 1, 7: 2, 8: 6, 9: 0, 10: 4, 11: 3},
     )
 
 
@@ -585,6 +596,51 @@ def jmc_28_to_jmc_30_mapping(tyk2_jmc_28, tyk2_jmc_30):
             21: 21,
             22: 22,
             35: 34,
+        },
+    )
+
+
+@pytest.fixture(scope="module")
+def jmc_30_to_ejm_46_mapping(tyk2_jmc_30, tyk2_ejm_46):
+    return LigandAtomMapping(
+        componentA=tyk2_jmc_30,
+        componentB=tyk2_ejm_46,
+        componentA_to_componentB={
+            23: 23,
+            24: 24,
+            25: 25,
+            26: 26,
+            27: 27,
+            28: 28,
+            29: 29,
+            30: 30,
+            31: 31,
+            32: 32,
+            33: 33,
+            36: 34,
+            0: 0,
+            1: 1,
+            2: 2,
+            3: 3,
+            4: 4,
+            5: 5,
+            6: 6,
+            7: 7,
+            8: 8,
+            9: 9,
+            10: 10,
+            11: 11,
+            12: 12,
+            13: 13,
+            14: 14,
+            15: 15,
+            16: 16,
+            17: 17,
+            18: 18,
+            19: 19,
+            20: 20,
+            21: 21,
+            22: 22,
         },
     )
 
