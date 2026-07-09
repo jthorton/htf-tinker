@@ -8,7 +8,7 @@ Workflow steps:
 4. Collect the positions of the minimised ligands and write them to an output SDF file.
 5. Calculate the RMSD of the hybrid end states to the pure end states and calculate the relative energy difference using the pure topologies and save to CSV for analysis.
 """
-from htf.utils import _scale_angles_and_torsions, _derive_dummy_junction_corrections
+from htf.utils import _scale_angles_and_torsions, _derive_dummy_junction_corrections, _derive_uniform_valence_pruning
 from htf.relative import HybridTopologyFactory as HTF
 import click
 from pathlib import Path
@@ -272,7 +272,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
     default=True,
 )
 @click.option("--internal-corrections/--no-internal-corrections", help="Whether to apply internal valence corrections at dummy-core junctions.", is_flag=True, default=False)
-def main(ligands: Path, output: Path, network: None | Path, scale_factor: float, scale_angles: bool, internal_corrections: bool):
+@click.option("--tm-corrections/--no-tm-corrections", help="Whether to apply TM corrections at dummy-core junctions.", is_flag=True, default=False)
+def main(ligands: Path, output: Path, network: None | Path, scale_factor: float, scale_angles: bool, internal_corrections: bool, tm_corrections: bool):
     """
     Command line interface for running a minimisation workflow.
     This can be configured using a YAML file.
@@ -284,6 +285,8 @@ def main(ligands: Path, output: Path, network: None | Path, scale_factor: float,
     4. Collect the positions of the minimised ligands and write them to an output SDF file.
     5. Calculate the RMSD of the hybrid end states to the pure end states and calculate the relative energy difference using the pure topologies and save to CSV for analysis.
     """
+    if tm_corrections and internal_corrections:
+        raise ValueError("Cannot use both internal corrections and TM corrections at the same time.")
     platform = openmm.Platform.getPlatformByName("CPU")
     # create the output directory if it doesn't exist
     output.mkdir(parents=True, exist_ok=True)
@@ -332,6 +335,9 @@ def main(ligands: Path, output: Path, network: None | Path, scale_factor: float,
         if internal_corrections:
             logger.info("Deriving internal valence corrections for dummy-core junctions")
             corrections = _derive_dummy_junction_corrections(edge, "openff-2.2.0.offxml")
+        elif tm_corrections:
+            logger.info("Deriving TM corrections for dummy-core junctions")
+            corrections = _derive_uniform_valence_pruning(edge, "openff-2.2.0.offxml")
         htf = make_hybrid_factory(edge, system_generator, corrections)
         if scale_factor != 1.0:
             # build the new scaled htf
