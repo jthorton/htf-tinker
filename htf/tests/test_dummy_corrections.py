@@ -182,7 +182,7 @@ def test_find_toluene_to_pyridine_corrections(toluene_to_pyridine_mapping, tmp_p
     # check blank corrections first
     assert not state_1.softened_angles
     assert not state_1.stiffened_angles
-    assert not state_1.stiffened_dihedrals
+    assert state_1.stiffened_dihedrals == {frozenset({0, 1, 5, 6})}
     # check removed angle
     assert state_1.removed_angles == {frozenset({0, 1, 2})}
     # check the removed improper on the junction
@@ -950,7 +950,7 @@ def test_toluene_pyridine_angle_corrections_htf(toluene_to_pyridine_mapping):
 def test_toluene_pyridine_torsion_corrections_htf(toluene_to_pyridine_mapping):
     """Make sure that the torsion corrections are correctly applied while making the HTF."""
     settings = RelativeHybridTopologyProtocol.default_settings()
-    corrections = _derive_dummy_junction_corrections(
+    corrections = _derive_uniform_valence_pruning(
         toluene_to_pyridine_mapping,
         settings.forcefield_settings.small_molecule_forcefield,
     )
@@ -973,7 +973,7 @@ def test_toluene_pyridine_torsion_corrections_htf(toluene_to_pyridine_mapping):
     # Note the 5 improper torsions should be conserved which should give us 15 improper potentials in total but
     # due to the degenerate order in which the improper torsions match only 2 (6 terms total) are stored in this force the rest
     # are in the interpolated force
-    assert num_standard_torsions == 26
+    assert num_standard_torsions == 25
     for i in range(num_standard_torsions):
         p1, p2, p3, p4, periodicity, phase, k = (
             standard_torsion_force.getTorsionParameters(i)
@@ -1060,11 +1060,12 @@ def test_toluene_pyridine_torsion_corrections_htf(toluene_to_pyridine_mapping):
     # make sure it has the correct name
     assert custom_torsion_force.getGlobalParameterName(0) == "lambda_torsions"
     num_torsions = custom_torsion_force.getNumTorsions()
-    assert num_torsions == 35
+    assert num_torsions == 37
 
     # track the removed torsions and impropers
     removed_torsions = set()
     removed_improper_torsions = set()
+    stiffened_torsions = set()
     for i in range(num_torsions):
         p1, p2, p3, p4, params = custom_torsion_force.getTorsionParameters(i)
         # p1, p2, p3, p4 are the index in toluene/pyridine get the expected parameters from the labels
@@ -1082,27 +1083,38 @@ def test_toluene_pyridine_torsion_corrections_htf(toluene_to_pyridine_mapping):
                 improper_scale = 1 / 3
                 toluene_torsion = toluene_labels["ImproperTorsions"][torsion]
 
-            # lambda_0 periodicity
-            assert params[0] in toluene_torsion.periodicity
-            term_index = toluene_torsion.periodicity.index(params[0])
-            # lambda_0 phase
-            assert params[1] == toluene_torsion.phase[term_index].m_as(offunit.radian)
-            # lambda_0 k
-            assert (
-                params[2]
-                == toluene_torsion.k[term_index].m_as(offunit.kilojoule_per_mole)
-                * improper_scale
-            )
-            # lambda_1 periodicity stays the same
-            assert params[3] in toluene_torsion.periodicity
-            # lambda_1 phase stays the same
-            assert params[4] == toluene_torsion.phase[term_index].m_as(offunit.radian)
-            assert params[5] == 0.0
+            if params[5] == 0.0:
+                # lambda_0 periodicity
+                assert params[0] in toluene_torsion.periodicity
+                term_index = toluene_torsion.periodicity.index(params[0])
+                # lambda_0 phase
+                assert params[1] == toluene_torsion.phase[term_index].m_as(offunit.radian)
+                # lambda_0 k
+                assert (
+                    params[2]
+                    == toluene_torsion.k[term_index].m_as(offunit.kilojoule_per_mole)
+                    * improper_scale
+                )
+                # lambda_1 periodicity stays the same
+                assert params[3] in toluene_torsion.periodicity
+                # lambda_1 phase stays the same
+                assert params[4] == toluene_torsion.phase[term_index].m_as(offunit.radian)
+                assert params[5] == 0.0
 
-            if improper_scale == 1.0:
-                removed_torsions.add(frozenset({p1, p2, p3, p4}))
+                if improper_scale == 1.0:
+                    removed_torsions.add(frozenset({p1, p2, p3, p4}))
+                else:
+                    removed_improper_torsions.add(frozenset({p1, p2, p3, p4}))
             else:
-                removed_improper_torsions.add(frozenset({p1, p2, p3, p4}))
+                # lambda_1 should be the stiffened value
+                assert params[5] == (100 * ommunit.kilocalorie_per_mole).value_in_unit(ommunit.kilojoule_per_mole)
+                # check the periodicity and phase are the same for both end states
+                assert params[0] == params[3] ==  1.0
+                assert params[1] == params[4] == 0.0
+                # lambda_0 k should be off
+                assert params[2] == 0.0
+                stiffened_torsions.add(frozenset({p1, p2, p3, p4}))
+                removed_torsions.discard(frozenset({p1, p2, p3, p4}))
 
         else:
             # this is a fully mapped torsion which is changing between toluene and pyridine
@@ -1170,6 +1182,7 @@ def test_toluene_pyridine_torsion_corrections_htf(toluene_to_pyridine_mapping):
 
     assert removed_torsions == corrections["lambda_1"].removed_dihedrals
     assert removed_improper_torsions == corrections["lambda_1"].removed_impropers
+    assert stiffened_torsions == corrections["lambda_1"].stiffened_dihedrals
 
 
 def test_propane_dimethyl_ether_angle_corrections_htf(
