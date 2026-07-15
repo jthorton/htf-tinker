@@ -10,6 +10,7 @@ def test_find_dummies_single_junction(htf_chloro_ethane):
     }
     assert junctions == expected_junctions
 
+
 def test_find_dummies_no_dummy(htf_chloro_fluoroethane):
     htf = htf_chloro_fluoroethane["htf"]
     junctions = _find_dummy_junctions(htf)
@@ -18,6 +19,7 @@ def test_find_dummies_no_dummy(htf_chloro_fluoroethane):
         "lambda_1": {},
     }
     assert junctions == expected_junctions
+
 
 def test_find_dummies_triple_junction(htf_propane_chloroethane):
     """Make sure we can find the dummy-core junctions in a triple junction system."""
@@ -31,6 +33,7 @@ def test_find_dummies_triple_junction(htf_propane_chloroethane):
     }
     assert junctions == expected_junctions
 
+
 def test_find_dummies_double_junction(htf_propane_dimethyl_ether):
     """Make sure we can find the dummy-core junctions in a double junction system."""
     htf = htf_propane_dimethyl_ether["htf"]
@@ -42,4 +45,3 @@ def test_find_dummies_double_junction(htf_propane_dimethyl_ether):
         "lambda_1": {0: {"junction_atom": 0, "dummies": [9, 10], "physical": [1, 5]}},
     }
     assert junctions == expected_junctions
-

@@ -8,14 +8,14 @@ Workflow steps:
 4. Collect the positions of the minimised ligands and write them to an output SDF file.
 5. Calculate the RMSD of the hybrid end states to the pure end states and calculate the relative energy difference using the pure topologies and save to CSV for analysis.
 """
-from htf.utils import _scale_angles_and_torsions
+from htf.utils import _scale_angles_and_torsions, _derive_dummy_junction_corrections, _derive_uniform_valence_pruning
+from htf.relative import HybridTopologyFactory as HTF
 import click
 from pathlib import Path
 import logging
 from rdkit import Chem
 from rdkit.Chem import rdMolAlign
-from gufe import SmallMoleculeComponent, LigandNetwork
-from openfe.protocols.openmm_rfe._rfe_utils.relative import HybridTopologyFactory
+from gufe import SmallMoleculeComponent, LigandNetwork, LigandAtomMapping
 from openfe.setup.ligand_network_planning import generate_lomap_network
 from openfe.setup import KartografAtomMapper
 from openfe.setup.atom_mapping.lomap_scorers import default_lomap_score
@@ -41,10 +41,57 @@ from collections import defaultdict
 from yammbs.analysis import get_internal_coordinate_rmsds
 import matplotlib.pyplot as plt
 import seaborn as sns
+from kartograf import KartografAtomMapper
+from openff.toolkit import ForceField
 
 sns.set_context("talk")
 
 amber_rdkit = ToolkitRegistry([RDKitToolkitWrapper(), AmberToolsToolkitWrapper()])
+FORCE_FIELD = "openff-2.2.0.offxml"
+
+def remap_edge(edge: LigandAtomMapping) -> LigandAtomMapping:
+    """We need to remap and fix the edge mapping to include constraint length changes"""
+    mapper = KartografAtomMapper(map_hydrogens_on_hydrogens_only=True)
+    new_mapping = next(mapper.suggest_mappings(edge.componentA, edge.componentB))
+    ligand_a_off = edge.componentA.to_openff()
+    ligand_b_off = edge.componentB.to_openff()
+    # get the bond labels
+    ff = ForceField(FORCE_FIELD)
+    ligand_a_bonds = ff.label_molecules(ligand_a_off.to_topology())[0]["Bonds"]
+    ligand_b_bonds = ff.label_molecules(ligand_b_off.to_topology())[0]["Bonds"]
+    # track which atoms to remove from the mapping
+    to_remove = []
+    atom_mapping = new_mapping.componentA_to_componentB
+    # loop over the bonds if they are fully mapped check the lengths
+    for bond in ligand_a_off.bonds:
+        atom_1 = bond.atom1_index
+        atom_2 = bond.atom2_index
+        if atom_1 in atom_mapping and atom_2 in atom_mapping:
+            # check if one atom is a hydrogen
+            if bond.atom1.atomic_number == 1 or bond.atom2.atomic_number == 1:
+                # this is a h-bond so check the length
+                ligand_a_length = ligand_a_bonds[(atom_1, atom_2)].length.m
+                ligand_b_length = ligand_b_bonds[(atom_mapping[atom_1], atom_mapping[atom_2])].length.m
+                if ligand_a_length != ligand_b_length:
+                    # we have a constraint length change so remove this mapping
+                    # workout which is the h and remove
+                    if bond.atom1.atomic_number == 1:
+                        to_remove.append(atom_1)
+                        print(
+                            f"Found a H constraint length change removing from mapping {atom_1}-{atom_mapping[atom_1]}")
+                    else:
+                        to_remove.append(atom_2)
+                        print(
+                            f"Found a H constraint length change removing from mapping {atom_2}-{atom_mapping[atom_2]}")
+    # create a new mapping without the removed atoms
+    for idx in to_remove:
+        atom_mapping.pop(idx)
+    new_mapping = LigandAtomMapping(
+        componentA=new_mapping.componentA,
+        componentB=new_mapping.componentB,
+        componentA_to_componentB=atom_mapping,
+    )
+    return  new_mapping
 
 
 def internal_coord_plot(df, filename):
@@ -105,7 +152,7 @@ def gen_charges(smc):
     return SmallMoleculeComponent.from_openff(offmol)
 
 
-def make_hybrid_factory(edge, system_generator):
+def make_hybrid_factory(edge, system_generator, corrections=None):
     small_mols = [edge.componentA, edge.componentB]
     off_small_mols = {
         'stateA': [(edge.componentA, edge.componentA.to_openff())],
@@ -122,15 +169,15 @@ def make_hybrid_factory(edge, system_generator):
         system_generator.create_system(mol.to_topology().to_openmm(),
                                        molecules=[mol])
 
-        # c. get OpenMM Modeller + a dictionary of resids for each component
-        stateA_modeller, comp_resids = system_creation.get_omm_modeller(
-            protein_comp=None,
-            solvent_comp=None,
-            small_mols=dict(chain(off_small_mols['stateA'],
-                                  off_small_mols['both'])),
-            omm_forcefield=None,
-            solvent_settings=None,
-        )
+    # c. get OpenMM Modeller + a dictionary of resids for each component
+    stateA_modeller, comp_resids = system_creation.get_omm_modeller(
+        protein_comp=None,
+        solvent_comp=None,
+        small_mols=dict(chain(off_small_mols['stateA'],
+                              off_small_mols['both'])),
+        omm_forcefield=None,
+        solvent_settings=None,
+    )
 
     stateA_topology = stateA_modeller.getTopology()
     stateA_positions = to_openmm(
@@ -174,13 +221,14 @@ def make_hybrid_factory(edge, system_generator):
     )
     # 3. Create the hybrid topology
     # b. Get hybrid topology factory
-    hybrid_factory = _rfe_utils.relative.HybridTopologyFactory(
+    hybrid_factory = HTF(
         stateA_system, stateA_positions, stateA_topology,
         stateB_system, stateB_positions, stateB_topology,
         old_to_new_atom_map=ligand_mappings['old_to_new_atom_map'],
         old_to_new_core_atom_map=ligand_mappings['old_to_new_core_atom_map'],
         softcore_LJ_v2=True,
         interpolate_old_and_new_14s=True,
+        valence_correction_terms=corrections
     )
     return hybrid_factory
 
@@ -223,7 +271,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
     is_flag=True,
     default=True,
 )
-def main(ligands: Path, output: Path, network: None | Path, scale_factor: float, scale_angles: bool):
+@click.option("--internal-corrections/--no-internal-corrections", help="Whether to apply internal valence corrections at dummy-core junctions.", is_flag=True, default=False)
+@click.option("--tm-corrections/--no-tm-corrections", help="Whether to apply TM corrections at dummy-core junctions.", is_flag=True, default=False)
+def main(ligands: Path, output: Path, network: None | Path, scale_factor: float, scale_angles: bool, internal_corrections: bool, tm_corrections: bool):
     """
     Command line interface for running a minimisation workflow.
     This can be configured using a YAML file.
@@ -235,6 +285,8 @@ def main(ligands: Path, output: Path, network: None | Path, scale_factor: float,
     4. Collect the positions of the minimised ligands and write them to an output SDF file.
     5. Calculate the RMSD of the hybrid end states to the pure end states and calculate the relative energy difference using the pure topologies and save to CSV for analysis.
     """
+    if tm_corrections and internal_corrections:
+        raise ValueError("Cannot use both internal corrections and TM corrections at the same time.")
     platform = openmm.Platform.getPlatformByName("CPU")
     # create the output directory if it doesn't exist
     output.mkdir(parents=True, exist_ok=True)
@@ -277,7 +329,16 @@ def main(ligands: Path, output: Path, network: None | Path, scale_factor: float,
     # Minimise each hybrid edge topologies
     hybrid_endstate_data = defaultdict(list)
     for edge in tqdm.tqdm(ligand_network.edges, desc="Minimising hybrid end-states"):
-        htf = make_hybrid_factory(edge, system_generator)
+        # remap the edge to make sure we take into account any constraint length changes
+        edge = remap_edge(edge)
+        corrections = None
+        if internal_corrections:
+            logger.info("Deriving internal valence corrections for dummy-core junctions")
+            corrections = _derive_dummy_junction_corrections(edge, "openff-2.2.0.offxml")
+        elif tm_corrections:
+            logger.info("Deriving TM corrections for dummy-core junctions")
+            corrections = _derive_uniform_valence_pruning(edge, "openff-2.2.0.offxml")
+        htf = make_hybrid_factory(edge, system_generator, corrections)
         if scale_factor != 1.0:
             # build the new scaled htf
             logger.info(f"Scaling dummy-core junction force constants by {scale_factor}, scale_angles={scale_angles}")
