@@ -2,6 +2,7 @@ import pathlib
 from dataclasses import fields
 
 import pytest
+from _pytest import tmpdir
 
 from htf.utils import (
     _derive_dummy_junction_corrections,
@@ -14,7 +15,6 @@ from htf.utils import (
     _prune_multiple_path_dihedrals,
     CorrectionData,
     _get_heaviest_dihedral_anchor,
-    _derive_uniform_valence_pruning,
 )
 from openff.toolkit import Molecule, ForceField
 from openff.units import unit as offunit
@@ -25,7 +25,7 @@ from openfe import SolventComponent
 
 def test_single_terminal_corrections(ejm_50_to_ejm_42_mapping, tmp_path):
     """Test single dummy group terminal corrections for a single and triple branch type."""
-    corrections = _derive_uniform_valence_pruning(
+    corrections = _derive_dummy_junction_corrections(
         ejm_50_to_ejm_42_mapping, "openff-2.0.0.offxml"
     )
     # check the single terminal dummy group correction first ejm_50
@@ -71,45 +71,44 @@ def test_single_terminal_corrections(ejm_50_to_ejm_42_mapping, tmp_path):
 
 def test_tyk2_dummy_group_interaction_corrections(ejm_50_to_ejm_55_mapping, tmp_path):
     """Test corrections which should leave interactions between two dummy groups not on the same core junction atom (ejm_50)."""
-    corrections = _derive_uniform_valence_pruning(
+    corrections = _derive_dummy_junction_corrections(
         ejm_50_to_ejm_55_mapping, "openff-2.0.0.offxml"
     )
-    # # check the simple non-corrected end state first ejm_55
-    # # we need no corrections for this triple terminal junction due to the geometry of the junction and lack of dummy groups
-    # state_0 = corrections["lambda_0"]
-    # # make sure all corrections are blank
-    # assert not state_0.softened_angles
-    # assert not state_0.stiffened_angles
-    # assert not state_0.stiffened_dihedrals
-    # assert not state_0.removed_impropers
-    # assert not state_0.removed_dihedrals
-    # assert not state_0.removed_angles
-    #
-    # # check the more complicated interacting dummy group case ejm_50
-    # # this has a terminal and dual anchor double branch dummy group which are connected
-    # state_1 = corrections["lambda_1"]
-    # # first check the blank corrections
-    # assert not state_1.stiffened_dihedrals
-    # assert not state_1.stiffened_angles
-    # assert not state_1.softened_angles
-    # assert not state_1.removed_impropers
-    # # make sure 2 redundant angles are removed around the dual anchor junction involving dummy atoms {29, 30}
-    # assert state_1.removed_angles == {
-    #     frozenset({19, 29, 31}),  # dummy atom 1 on dual anchor junction
-    #     frozenset({19, 30, 31}),  # dummy atom 2 on dual anchor junction
-    # }
-    # # make sure 2 redundant dihedrals are removed which terminate in the dummy atoms {29, 30}
-    # assert state_1.removed_dihedrals == {
-    #     frozenset({16, 17, 19, 29}),  # redundant dihedral on dummy atom 1
-    #     frozenset({16, 17, 19, 30}),  # redundant dihedral on dummy atom 2
-    # }
-    print(corrections)
+    # check the simple non-corrected end state first ejm_55
+    # we need no corrections for this triple terminal junction due to the geometry of the junction and lack of dummy groups
+    state_0 = corrections["lambda_0"]
+    # make sure all corrections are blank
+    assert not state_0.softened_angles
+    assert not state_0.stiffened_angles
+    assert not state_0.stiffened_dihedrals
+    assert not state_0.removed_impropers
+    assert not state_0.removed_dihedrals
+    assert not state_0.removed_angles
+
+    # check the more complicated interacting dummy group case ejm_50
+    # this has a terminal and dual anchor double branch dummy group which are connected
+    state_1 = corrections["lambda_1"]
+    # first check the blank corrections
+    assert not state_1.stiffened_dihedrals
+    assert not state_1.stiffened_angles
+    assert not state_1.softened_angles
+    assert not state_1.removed_impropers
+    # make sure 2 redundant angles are removed around the dual anchor junction involving dummy atoms {29, 30}
+    assert state_1.removed_angles == {
+        frozenset({19, 29, 31}),  # dummy atom 1 on dual anchor junction
+        frozenset({19, 30, 31}),  # dummy atom 2 on dual anchor junction
+    }
+    # make sure 2 redundant dihedrals are removed which terminate in the dummy atoms {29, 30}
+    assert state_1.removed_dihedrals == {
+        frozenset({16, 17, 19, 29}),  # redundant dihedral on dummy atom 1
+        frozenset({16, 17, 19, 30}),  # redundant dihedral on dummy atom 2
+    }
     # draw the corrections
     _draw_dummy_corrections(
         mapping=ejm_50_to_ejm_55_mapping,
         corrections=corrections,
         force_field="openff-2.0.0.offxml",
-        output_dir=pathlib.Path("ejm_50_to_ejm_55_corrections_unified"),
+        output_dir=tmp_path / "ejm_50_to_ejm_55_corrections",
     )
 
 
@@ -120,7 +119,7 @@ def test_tyk2_dual_junction_large_single_branch_corrections(
     Here we want to make sure the improper spanning the core and the dummy junction atom is removed while the improper
     spanning the dummy group and the core junction atom is kept.
     """
-    corrections = _derive_uniform_valence_pruning(
+    corrections = _derive_dummy_junction_corrections(
         ejm_31_to_ejm_49_mapping, "openff-2.0.0.offxml"
     )
     # check the simple dual anchor single branch correction first ejm_31
@@ -170,7 +169,7 @@ def test_tyk2_dual_junction_large_single_branch_corrections(
 
 def test_find_toluene_to_pyridine_corrections(toluene_to_pyridine_mapping, tmp_path):
     """Simple test case with corrections at one end (toluene), dual anchor single branch correction type."""
-    corrections = _derive_uniform_valence_pruning(
+    corrections = _derive_dummy_junction_corrections(
         toluene_to_pyridine_mapping, "openff-2.0.0.offxml"
     )
     # there should be no corrections in lambda_0
@@ -209,7 +208,7 @@ def test_propane_to_dimethyl_ether_corrections(
     propane_to_dimethyl_ether_mapping, tmp_path
 ):
     """Free rotor test case with corrections at one end (dimethyl ether), dual anchor two branch correction type."""
-    corrections = _derive_uniform_valence_pruning(
+    corrections = _derive_dummy_junction_corrections(
         propane_to_dimethyl_ether_mapping, "openff-2.0.0.offxml"
     )
     # there should be no corrections at lambda_0
@@ -258,7 +257,7 @@ def test_propane_to_dimethyl_ether_corrections(
 
 def test_triple_corrections_tyk2(ejm_31_to_ejm_42_mapping, tmp_path):
     """Triple non-planar junction correction type at both ends, end stateB (lambda_0 corrections) is a dummy group with pruned group anchor dihedral constraints."""
-    corrections = _derive_uniform_valence_pruning(
+    corrections = _derive_dummy_junction_corrections(
         ejm_31_to_ejm_42_mapping, "openff-2.0.0.offxml"
     )
     # check simple case first which is for ejm_31 and lambda_1
@@ -317,7 +316,7 @@ def test_triple_corrections_tyk2(ejm_31_to_ejm_42_mapping, tmp_path):
 
 def test_terminal_co_linear_tyk2_corrections(jmc_28_to_jmc_30_mapping, tmp_path):
     """Triple terminal junction to a terminal co-linear junction (jmc_30)"""
-    corrections = _derive_uniform_valence_pruning(
+    corrections = _derive_dummy_junction_corrections(
         jmc_28_to_jmc_30_mapping, "openff-2.0.0.offxml"
     )
     # start with the simple single co-linear terminal group for jmc_30
@@ -364,7 +363,7 @@ def test_tyk2_triple_junction_cyclopropane_corrections(
     jmc_30_to_ejm_46_mapping, tmp_path
 ):
     """Make sure we correctly prune dummy junction anchors in 3 membered rings with multiple possible ways around the ring."""
-    corrections = _derive_uniform_valence_pruning(
+    corrections = _derive_dummy_junction_corrections(
         jmc_30_to_ejm_46_mapping, "openff-2.0.0.offxml"
     )
     # check ejm_30 and make sure that all dihedrals in the cyclopropane group are removed
@@ -421,37 +420,169 @@ def test_tyk2_triple_junction_cyclopropane_corrections(
     )
 
 
-def test_triple_junction_interactions_hif2a(hif2a_155_to_231_mapping):
+def test_triple_junction_interactions_hif2a(hif2a_155_to_231_mapping, tmp_path):
     """Test removing triple junction dihedrals between dummy groups."""
     correction = _derive_dummy_junction_corrections(
         hif2a_155_to_231_mapping, "openff-2.0.0.offxml"
     )
-    print(correction)
+    # start with the 155 corrections
+    state_1 = correction["lambda_1"]
+    # check the blank corrections first
+    assert not state_1.stiffened_dihedrals
+    assert not state_1.removed_impropers
+    assert not state_1.stiffened_angles
+    # check all softened angles involve 31 and 29
+    assert state_1.softened_angles == {
+        frozenset({2, 3, 31}),
+        frozenset({3, 30, 31}),
+        frozenset({3, 4, 31}),
+        frozenset({2, 3, 29}),
+        frozenset({2, 28, 29}),
+        frozenset({1, 2, 29})
+    }
+    # check the removed angles around the dual anchor junction with two branches
+    assert state_1.removed_angles == {
+        frozenset({37, 21, 22}), # dummy atom 22
+        frozenset({37, 21, 23}), # dummy atom 23
+    }
+    # check the removed dihedrals
+    assert state_1.removed_dihedrals == {
+        # removed dihedrals for triple non-planar for atom 31
+        frozenset({2, 3, 29, 31}),
+        frozenset({1, 2, 3, 31}),
+        frozenset({3, 4, 5, 31}),
+        frozenset({9, 3, 4, 31}),
+        frozenset({2, 3, 28, 31}),
+        # removed dihedrals for triple non-planar for atom 29
+        frozenset({1, 2, 29, 5}),
+        frozenset({1, 2, 27, 29}),
+        frozenset({2, 3, 4, 29}),
+        frozenset({0, 1, 2, 29}),
+        frozenset({2, 3, 29, 30}),
+        # remove dual rotor constraints in the dual anchor junctions
+        # 2 dihedrals terminating in 23
+        frozenset({18, 21, 6, 23}),
+        frozenset({18, 19, 21, 23}),
+        # 2 dihedrals terminating in 22
+        frozenset({18, 21, 6, 22}),
+        frozenset({18, 19, 21, 22}),
+    }
+    # 231 corrections
+    state_0 = correction["lambda_0"]
+    # check the blank corrections first
+    assert not state_0.stiffened_dihedrals
+    assert not state_0.removed_impropers
+    assert not state_0.stiffened_angles
+    assert state_0.softened_angles == {
+        # check all softened angles involve 28 and 23
+        frozenset({2, 27, 23}),
+        frozenset({2, 3, 23}),
+        frozenset({1, 2, 23}),
+        frozenset({3, 4, 28}),
+        frozenset({2, 3, 28}),
+        frozenset({3, 28, 29})
+    }
+    # check the removed angles around the dual anchor junction with two branches
+    assert state_0.removed_angles == {
+        frozenset({35, 37, 22}), # dummy atom 37
+        frozenset({35, 36, 22}) # dummy atom 36
+    }
+    assert state_0.removed_dihedrals == {
+        # removed dihedrals for triple non-planar for atom 28
+        frozenset({2, 3, 28, 23}),
+        frozenset({3, 2, 27, 28}),
+        frozenset({9, 3, 4, 28}),
+        frozenset({1, 2, 3, 28}),
+        frozenset({28, 3, 4, 5}),
+        # removed dihedrals for triple non-planar for atom 23
+        frozenset({2, 3, 4, 23}),
+        frozenset({1, 2, 26, 23}),
+        frozenset({2, 3, 29, 23}),
+        frozenset({1, 2, 5, 23}),
+        frozenset({0, 1, 2, 23}),
+        # remove dual rotor constraints in the dual anchor junctions
+        # 2 dihedrals terminating in 36
+        frozenset({36, 22, 19, 20}),
+        frozenset({36, 22, 19, 6}),
+        # 2 dihedrals terminating in 37
+        frozenset({37, 22, 19, 20}),
+        frozenset({37, 22, 19, 6})
+    }
     _draw_dummy_corrections(
         mapping=hif2a_155_to_231_mapping,
         corrections=correction,
         force_field="openff-2.0.0.offxml",
-        output_dir=pathlib.Path("hif2a_155_to_231_corrections"),
+        output_dir=tmp_path / "hif2a_155_to_231_corrections",
     )
 
-def test_faah_26_to_28(faah_26_to_28_mapping):
-    corrections = _derive_uniform_valence_pruning(faah_26_to_28_mapping, "openff-2.0.0.offxml")
+def test_faah_26_to_28(faah_26_to_28_mapping, tmp_path):
+    """Test removing triple junction dihedrals"""
+    corrections = _derive_dummy_junction_corrections(faah_26_to_28_mapping, "openff-2.0.0.offxml")
     print(corrections)
+    # faah 26 first
+    state_1 = corrections["lambda_1"]
+    # check the blank corrections first
+    assert not state_1.stiffened_dihedrals
+    assert not state_1.removed_impropers
+    assert not state_1.stiffened_angles
+    assert not state_1.removed_angles
+    assert state_1.softened_angles == {
+        # make sure all softened angles involve dummy atom 42
+        frozenset({41, 42, 39}),
+        frozenset({40, 42, 39}),
+        frozenset({42, 38, 39})
+    }
+    assert state_1.removed_dihedrals == {
+        frozenset({42, 5, 38, 39}), # dummy junction dihedral
+        frozenset({40, 42, 43, 39}), # dummy group dual rotor constraints
+        frozenset({41, 42, 43, 39}),
+        frozenset({40, 42, 45, 39}),
+        frozenset({41, 42, 45, 39}),
+        frozenset({41, 42, 44, 39}),
+        frozenset({40, 42, 44, 39})
+    }
+    # faah 28 with two nearby dummy groups
+    state_0 = corrections["lambda_0"]
+    # check the blank corrections first
+    assert not state_0.stiffened_dihedrals
+    assert not state_0.stiffened_angles
+    assert state_0.removed_impropers == {
+        # make sure to remove the improper covering 39
+        frozenset({40, 5, 38, 39})
+    }
+    assert state_0.removed_angles == {
+        # single removed angle for the dual anchor junction
+        frozenset({40, 38, 39})
+    }
+    # make sure all angles involving dummy atom 42 are softened
+    assert state_0.softened_angles == {
+        frozenset({40, 42, 38}),
+        frozenset({40, 42, 43}),
+        frozenset({40, 41, 42})
+    }
+    assert state_0.removed_dihedrals == {
+        # remove all dihedrals terminating in 42 including cross dummy group terms
+        frozenset({40, 42, 5, 38}),
+        frozenset({40, 42, 38, 39}), # cross dummy group term to 39
+        # remove dual rotor constraints in the dual anchor junction
+        frozenset({3, 5, 38, 39}),
+        frozenset({40, 41, 38, 39}),
+        frozenset({40, 43, 38, 39})
+    }
     _draw_dummy_corrections(
         mapping=faah_26_to_28_mapping,
         corrections=corrections,
         force_field="openff-2.0.0.offxml",
-        output_dir=pathlib.Path("faah_26_to_28_corrections_uniform"),
+        output_dir=tmp_path / "faah_26_to_28_corrections",
     )
 
 def test_shp2_triple_junction_dummy_group_interaction_corrections(
     shp2_099_1_ex7_to_ex9, tmp_path
 ):
     """Test corrections for a triple non-planar junction which also has interactions with a terminal junction near a ring (example-9)."""
-    corrections = _derive_uniform_valence_pruning(
+    corrections = _derive_dummy_junction_corrections(
         shp2_099_1_ex7_to_ex9, "openff-2.0.0.offxml"
     )
-    print(corrections)
     # start with the example-9 case
     state_0 = corrections["lambda_0"]
     # first check the blank corrections
@@ -467,13 +598,16 @@ def test_shp2_triple_junction_dummy_group_interaction_corrections(
     }
     # now check the removed dihedrals
     assert state_0.removed_dihedrals == {
-        # all dihedrals terminating in 41 should be removed
+        # all dihedrals terminating in 41 should be removed including dummy group interactions
         frozenset({41, 3, 4, 27}),
         frozenset({41, 3, 4, 26}),
         frozenset({41, 3, 4, 5}),
         frozenset({41, 3, 2, 24}),
         frozenset({41, 3, 2, 25}),
         frozenset({41, 3, 2, 1}),
+        frozenset({41, 3, 21, 38}), # cross dummy group dihedrals
+        frozenset({41, 21, 3, 37}),
+        frozenset({41, 21, 3, 36}),
         # remove dual rotor constraints in the terminal group
         frozenset({38, 21, 3, 2}),
         frozenset({36, 21, 3, 2}),
@@ -493,13 +627,16 @@ def test_shp2_triple_junction_dummy_group_interaction_corrections(
         frozenset({22, 3, 21}),
     }
     assert state_1.removed_dihedrals == {
-        # all dihedrals terminating in 22 should be removed not coupled to the other dummy group
+        # all dihedrals terminating in 22 should be removed including dummy group interactions
         frozenset({22, 3, 2, 25}),
         frozenset({22, 3, 2, 26}),
         frozenset({22, 3, 2, 1}),
         frozenset({22, 3, 4, 28}),
         frozenset({22, 3, 4, 27}),
         frozenset({22, 3, 4, 5}),
+        frozenset({22, 3, 21, 42}), # cross dummy group dihedrals
+        frozenset({22, 3, 21, 38}),
+        frozenset({22, 3, 21, 37}),
         # dummy group 1 dual rotor constraints {39, 40, 41}
         frozenset({39, 22, 3, 2}),
         frozenset({39, 22, 3, 21}),
@@ -517,7 +654,7 @@ def test_shp2_triple_junction_dummy_group_interaction_corrections(
         mapping=shp2_099_1_ex7_to_ex9,
         corrections=corrections,
         force_field="openff-2.0.0.offxml",
-        output_dir=pathlib.Path("shp2_ex7_to_ex9_corrections"),
+        output_dir=tmp_path / "shp2_ex7_to_ex9_corrections",
     )
 
 
@@ -536,7 +673,7 @@ def test_higher_order_corrections(sulfur_hexafluoride_to_tetrafluoride_mapping):
         },
         before=0,
     )
-    corrections = _derive_uniform_valence_pruning(
+    corrections = _derive_dummy_junction_corrections(
         sulfur_hexafluoride_to_tetrafluoride_mapping, ff.to_string()
     )
     # check the tetrafluoride case first this should be blank
@@ -950,7 +1087,7 @@ def test_toluene_pyridine_angle_corrections_htf(toluene_to_pyridine_mapping):
 def test_toluene_pyridine_torsion_corrections_htf(toluene_to_pyridine_mapping):
     """Make sure that the torsion corrections are correctly applied while making the HTF."""
     settings = RelativeHybridTopologyProtocol.default_settings()
-    corrections = _derive_uniform_valence_pruning(
+    corrections = _derive_dummy_junction_corrections(
         toluene_to_pyridine_mapping,
         settings.forcefield_settings.small_molecule_forcefield,
     )

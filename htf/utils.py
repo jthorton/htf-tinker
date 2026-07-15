@@ -522,7 +522,7 @@ def _derive_dummy_junction_corrections(
                     print(
                         f"Deriving corrections for triple junction with physical atoms {junction.physical} and dummy atoms {junction.dummies}"
                     )
-                    corrections = _derive_triple_corrections_v2(
+                    corrections = _derive_triple_corrections(
                         junction, rdkit_mol, ff_labels, core_atoms
                     )
                     print(f"Derived corrections for triple junctions: {corrections}")
@@ -856,12 +856,14 @@ def _derive_dual_corrections(
         junction_atom=junction_atom,
     )
 
-    # we need to check if the junction is planar and if we need to stiffen the dihedral
+    # check if we should stiffen the dihedral based on the hybridisation of the junction atom
+    # ring membership of the junction atom or if the terminal atom is in a free rotor
     junction_hybridisation = rdkit_mol.GetAtomWithIdx(junction_atom).GetHybridization()
-    if junction_hybridisation == Chem.HybridizationType.SP2:
-        junction_is_planar = True
+    junction_ring = rdkit_mol.GetAtomWithIdx(junction_atom).IsInRing()
+    if junction_hybridisation == Chem.HybridizationType.SP2 and junction_ring:
+        stiffen_planar = True
     else:
-        junction_is_planar = False
+        stiffen_planar = False
 
     # remove all dihedrals which do not terminate in the heaviest terminal atom
     for dihedral in dummy_junction_dihedrals:
@@ -869,10 +871,7 @@ def _derive_dual_corrections(
             corrections.removed_dihedrals.add(frozenset(dihedral))
         # we need to stiffen the dihedral if we want to keep the dummy group in plane with the rest of the molecule
         # or if we have to anchor using a free rotor
-        elif heaviest_terminal_atom in dihedral and (
-            heaviest_terminal_atom in rotor_atoms
-        ):
-            # elif heaviest_terminal_atom in dihedral and (heaviest_terminal_atom in rotor_atoms or junction_is_planar): # disable dihedral stiffening for now
+        elif heaviest_terminal_atom in dihedral and (heaviest_terminal_atom in rotor_atoms or stiffen_planar): # disable dihedral stiffening for now
             corrections.stiffened_dihedrals.add(frozenset(dihedral))
 
     # check that we don't have multiple path dihedrals left in the system which can happen in 4 membered rings
@@ -969,16 +968,22 @@ def _derive_triple_corrections(
             has_physical = physical_atoms.intersection(dihedral)
             has_other_core = other_core_atoms.intersection(dihedral)
 
-            # we need to remove all dihedrals which originate from the dummy junction atom and pass through the junction
-            term_junction_1 = {*dihedral[:2]}
-            term_junction_2 = {*dihedral[2:]}
-            central_atoms = {*dihedral[1:3]}
-            if (junction_atom in term_junction_1 and term_junction_1.intersection(dummy_atoms)) or (junction_atom in term_junction_2 and term_junction_2.intersection(dummy_atoms)):
+            # if the dihedral originates from the physical and terminates in the dummy junction we need to remove
+            # len(has_physical) == 2 is a special case where the tiple junction is on a cyclopropane group
+            if has_dummy and has_physical and has_junction and (has_other_core or len(has_physical) == 2):
                 corrections.removed_dihedrals.add(frozenset(dihedral))
             # if the dihedral originates from the dummy group and terminates in the physical atom we need to collect for
-            # anchor corrections this will have the dummy core junction as the central bond
-            # if we have more than 1 dummy atom from the junction in the bond it links two groups on the same junction and should be skipped
-            elif junction_atom in central_atoms and central_atoms.intersection(dummy_atoms) and len(has_dummy) == 1:
+            # anchor corrections
+            # check if the dihedral originates from the dummy group but not the dummy junction atom
+            elif has_junction and has_dummy and has_physical and not has_other_core:
+                # this could also be a dihedral linking two dummy groups - this requires the central atoms to be the core junction and a physical atom
+                # remove these as the geometry of the triple correction is distorted
+                central_atoms = {dihedral[1], dihedral[2]}
+                if junction_atom in central_atoms and central_atoms.intersection(
+                        physical_atoms
+                ):
+                    corrections.removed_dihedrals.add(frozenset(dihedral))
+                    continue
                 dummy_group_dihedrals.add(dihedral)
 
         if dummy_group_dihedrals:
@@ -1002,91 +1007,11 @@ def _derive_triple_corrections(
 
     return corrections
 
-def _derive_triple_corrections_v2(junction: JunctionData, rdkit_mol, force_field_labels: Dict[str, Any], core_atoms: set[int]) -> CorrectionData:
-    """Use a simple bond angle dihedral method for this junction type."""
-
-    corrections = CorrectionData()
-
-    junction_atom = junction.junction_atom
-    physical_atoms = junction.physical
-    dummy_atoms = junction.dummies
-    # track those which terminate in the dummy junction atom (bonded to the physical junction atom)
-    dummy_junction_dihedrals = set()
-    # also track dihedrals which terminate at one of the physical atoms and originate from within one of the dummy groups
-    dummy_group_dihedrals = set()
-    other_core_atoms = core_atoms - physical_atoms - {junction_atom}
-
-    for dihedral in force_field_labels["ProperTorsions"].keys():
-        # do checks to classify the dihedral
-        has_junction = junction_atom in dihedral
-        has_dummy = dummy_atoms.intersection(dihedral)
-        has_physical = physical_atoms.intersection(dihedral)
-        has_other_core = other_core_atoms.intersection(dihedral)
-
-        # check if the dihedral terminates at the dummy junction atom and involves no other dummy atoms
-        if has_junction and has_dummy and has_physical and has_other_core:
-            dummy_junction_dihedrals.add(dihedral)
-        # check if the dihedral originates from the dummy group but not the dummy junction atom
-        elif has_junction and has_dummy and has_physical and not has_other_core:
-            # this could also be a dihedral linking two dummy groups - this requires the central atoms to be the core junction and a physical atom
-            central_atoms = {dihedral[1], dihedral[2]}
-            if junction_atom in central_atoms and central_atoms.intersection(
-                    physical_atoms
-            ):
-                continue
-            dummy_group_dihedrals.add(dihedral)
-
-    # find the dihedral to terminate in by mass
-    excluded_atoms = set(dummy_atoms) | set(physical_atoms) | {junction_atom}
-    heaviest_terminal_atom = _get_heaviest_dihedral_anchor(
-        dihedrals=dummy_junction_dihedrals,
-        excluded_atoms=excluded_atoms,
-        rdkit_mol=rdkit_mol,
-        junction_atom=junction_atom,
-    )
-
-    # remove all dihedrals which do not terminate in the heaviest terminal atom
-    for dihedral in dummy_junction_dihedrals:
-        if heaviest_terminal_atom not in dihedral:
-            corrections.removed_dihedrals.add(frozenset(dihedral))
-
-    # check that we don't have multiple path dihedrals left in the system which can happen in 4 membered rings
-    corrections = _prune_multiple_path_dihedrals(
-        target_dihedrals=dummy_junction_dihedrals, corrections=corrections
-    )
-
-    # find the physical atom the kept dihedrals pass through
-    heavy_atom = rdkit_mol.GetAtomWithIdx(heaviest_terminal_atom)
-    physical_atom_to_keep = [
-        a.GetIdx() for a in heavy_atom.GetNeighbors() if a.GetIdx() in physical_atoms
-    ][0]
-
-    # remove redundant angles not running through the kept dihedral to minimise the number of psychical anchor atoms
-    for angle in force_field_labels["Angles"].keys():
-        if (
-                dummy_atoms.intersection(angle)
-                and junction_atom in angle
-                and physical_atoms.intersection(angle)
-                and physical_atom_to_keep not in angle
-        ):
-            # if the angle involves the junction atom, a dummy atom and a physical atom it might be redundant
-            # dual junctions have two possible branches
-            corrections.removed_angles.add(frozenset(angle))
-
-    # remove single and dual anchor dihedral constraints if the dummy group is larger than a single atom
-    if dummy_group_dihedrals:
-        print("found dummy group dihedrals", dummy_group_dihedrals)
-        # only keep torsions which terminate in the physical atom kept in the dummy junction dihedral
-        for dihedral in dummy_group_dihedrals:
-            if physical_atom_to_keep not in dihedral:
-                corrections.removed_dihedrals.add(frozenset(dihedral))
-
-    return corrections
 
 def _derive_higher_order_corrections(
     junction: JunctionData,
     rdkit_mol: Chem.Mol,
-    force_field_labels: Dict[str, Any],
+    force_field_labels: dict[str, Any],
     core_atoms: set[int],
 ) -> CorrectionData:
     """Derive higher order corrections using the best practices from Fleck et al.
